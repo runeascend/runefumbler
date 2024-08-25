@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "runefumbler"
+version = "0.1.0"
+description = "Don't be fumblin' no trades now"
+authors = ["Charles Warren <ciwarren@mtu.edu>"]
+license = "n"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pyautogui = "^0.9.54"
+
+
+[tool.poetry.group.dev.dependencies]
+deptry = "^0.16.1"
+black = "^24.4.2"
+isort = "^5.13.2"
+pytest-cov = "^4.1.0"
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.1"
+testcontainers = "^4.7.2"
+clickhouse-migrations = "^0.7.1"
+anyio = "^4.4.0"
+trio = "^0.26.2"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
