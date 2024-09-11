@@ -3,8 +3,36 @@ import win32gui
 import time
 import random
 import pyautogui as mouse
+import os
 
 positions = []
+
+test_string = "Swordfish : 178 : 183 : 100 : Gold amulet (u) : 122 : 137 : 100 : Swamp paste : 5 : 10 : 100 : Steam rune : 110 : 116 : 13 : Lava rune : 20 : 25 : 90 : Amethyst dart : 237 : 244 : 46 : Lantern lens : 13 : 18 : 125 : Dragon javelin : 883 : 907 : 117 :"
+
+
+class fumble_opp:
+    def __init__(self, name, buy, sell, time):
+        self.name = name
+        self.buy = buy
+        self.sell = sell
+        self.time = time
+
+    def show(self):
+        print("Name: " + self.name)
+        print("Buy At: " + self.buy)
+        print("Sell At: " + self.sell)
+        print("Time In Pos: " + self.time)
+
+def build_trade_opps(savant_input):
+    split_string = savant_input.split(':')
+    split_string = [s.strip() for s in split_string]
+    print(split_string)
+    trade_opps = []
+    for i in range(0, 32, 4):
+        opp = fumble_opp(split_string[0 + i], split_string[1 + i], split_string[2 + i], split_string[3 + i])
+        trade_opps.append(opp)
+    for opp in trade_opps:
+        opp.show()
 
 def start_server(host='192.168.1.70', port=12345):
     # Create a TCP/IP socket
@@ -29,7 +57,9 @@ def start_server(host='192.168.1.70', port=12345):
             while True:
                 data = connection.recv(1024)
                 if data:
-                    print(f'Received: {data.decode("utf-8")}')
+                    os.system('cls')
+                    build_trade_opps(f'{data.decode("utf-8")}')
+
                 else:
                     print('No more data from', client_address)
                     break
@@ -118,9 +148,9 @@ def execute_trades():
 
 
 if __name__ == '__main__':
-    #start_server()
-    analyze_window()
-    execute_trades()
+    start_server()
+    #analyze_window()
+    #execute_trades()
 
 
 
