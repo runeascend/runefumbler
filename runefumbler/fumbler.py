@@ -147,10 +147,14 @@ def execute_trades():
             print("Invalid input format. Please enter a number (1-8) followed by a character (b, s, c, e).")
 
 
-if __name__ == '__main__':
+def main():
     start_server()
     #analyze_window()
     #execute_trades()
+    
+if __name__ == '__main__':
+    main()
+
 
 
 

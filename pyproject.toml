@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "runefumbler"
+version = "0.1.0"
+description = "Don't be fumblin' no trades now"
+authors = ["None"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pyautogui = "^0.9.54"
+pywin32 = "^306"
+
+[tool.poetry.group.dev.dependencies]
+deptry = "^0.16.1"
+black = "^24.4.2"
+isort = "^5.13.2"
+pytest-cov = "^4.1.0"
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.1"
+anyio = "^4.4.0"
+trio = "^0.26.2"
+
+[tool.poetry.scripts]
+runefumbler = runefumbler.fumbler:main
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 80
+
+[tool.isort]
+profile = "black"
+line_length = 80
+
+[tool.deptry]
+ignore = ["DEP003"]
