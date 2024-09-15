@@ -1,19 +1,23 @@
+# Runefumbler
 
-# Project Development Setup
+The execution engine for interacting with runescape client.
+
+
+## Project Development Setup
 
 This project uses a Windows batch script, `dev.bat`, to simplify the management of the Python development environment. The script handles virtual environment creation, dependency management, formatting, and testing.
 
 
-## Prerequisites
+### Prerequisites
 
 Ensure the following are installed on your machine:
 
 - [Python 3.11](https://www.python.org/downloads/release/python-3110/)
 - [Poetry](https://python-poetry.org/docs/#installation) (automatically installed if missing)
 
-## Usage
+### Usage
 
-### 1. Setting up the Development Environment
+#### 1. Setting up the Development Environment
 
 To create a virtual environment and install the necessary dependencies, including development packages, run:
 
@@ -28,7 +32,7 @@ This will:
 - run `.venv\Scripts\activate` to activate your env 
 
 
-### 2. Formatting Code
+#### 2. Formatting Code
 
 To automatically format your Python code using `black` and `isort`, run:
 
@@ -38,7 +42,7 @@ dev.bat format
 
 This command applies both formatters across the project codebase.
 
-### 3. Checking Code Formatting
+#### 3. Checking Code Formatting
 
 To check if your code adheres to the project's formatting standards without applying changes, run:
 
@@ -48,7 +52,7 @@ dev.bat format-check
 
 This will verify that the code is formatted according to `black` and `isort` rules.
 
-### 4. Checking Dependencies
+#### 4. Checking Dependencies
 
 To check for any potential issues in your project dependencies, such as unused or incorrect packages, run:
 
@@ -56,7 +60,7 @@ To check for any potential issues in your project dependencies, such as unused o
 dev.bat dep-check
 ```
 
-### 5. Updating the Development Environment
+#### 5. Updating the Development Environment
 
 To update all the project dependencies to their latest compatible versions, run:
 
@@ -64,7 +68,7 @@ To update all the project dependencies to their latest compatible versions, run:
 dev.bat update-dev
 ```
 
-### 6. Running Tests
+#### 6. Running Tests
 
 To run the test suite with `pytest`, along with coverage reports, run:
 
@@ -74,7 +78,7 @@ dev.bat test
 
 This command generates both terminal and HTML coverage reports, with coverage information for the `./runespreader` directory.
 
-### Available Commands
+#### Available Commands
 
 | Command         | Description                                                              |
 |-----------------|--------------------------------------------------------------------------|
