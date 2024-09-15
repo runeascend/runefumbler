@@ -2,6 +2,9 @@
 
 The execution engine for interacting with runescape client.
 
+To install: `pip install runefumbler`
+
+https://pypi.org/project/runefumbler/
 
 ## Project Development Setup
 
