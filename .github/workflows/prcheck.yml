@@ -2,7 +2,7 @@ name: PR Check
 on: [pull_request]
 jobs:
   test:
-    runs-on: org-level
+    runs-on: self-hosted
     container:
       image: winamd64/python:3.11
     steps:
