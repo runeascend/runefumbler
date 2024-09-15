@@ -79,19 +79,19 @@ jobs:
     env:
       POETRY_HTTP_BASIC_PASSWORD: "${{ secrets.PYPI_TOKEN }}"
     steps:
-    - name: Checkout code
-      id: checkout-code
-      uses: actions/checkout@v3
-      with:
-        ref: ${{ github.sha }}
-        fetch-depth: 0
-      - name: python setup
+      - name: Checkout code
+        id: checkout-code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+        - name: python setup
+          run: |
+            py -m venv .venv
+            .venv\Scripts\activate
+            pip install poetry==1.4.2
+            poetry install --with dev
+      - name: Publish to pypi
         run: |
-          py -m venv .venv
           .venv\Scripts\activate
-          pip install poetry==1.4.2
-          poetry install --with dev
-    - name: Publish to pypi
-      run: |
-        .venv\Scripts\activate
-        poetry publish --build --username __token__ --password $POETRY_HTTP_BASIC_PASSWORD
+          poetry publish --build --username __token__ --password $POETRY_HTTP_BASIC_PASSWORD
