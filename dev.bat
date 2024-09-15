@@ -4,7 +4,7 @@ setlocal
 REM Check if virtual environment exists, if not create it
 if not exist ".venv\Scripts\activate" (
     echo "Creating virtual environment..."
-    python -m venv .venv
+    py -m venv .venv
 )
 
 REM Activate virtual environment
