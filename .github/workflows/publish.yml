@@ -76,8 +76,6 @@ jobs:
     needs:
       - tag
       - release
-    env:
-      POETRY_HTTP_BASIC_PASSWORD: "${{ secrets.PYPI_TOKEN }}"
     steps:
       - name: Checkout code
         id: checkout-code
@@ -94,5 +92,4 @@ jobs:
       - name: Publish to pypi
         run: |
           .venv\Scripts\activate
-          echo $POETRY_HTTP_BASIC_PASSWORD
-          poetry publish --build --username __token__ --password $POETRY_HTTP_BASIC_PASSWORD
+          poetry publish --build --username __token__ --password $(cat C:\actions-runner\key.txt) 
