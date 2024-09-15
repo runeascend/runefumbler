@@ -85,12 +85,12 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-        - name: python setup
-          run: |
-            py -m venv .venv
-            .venv\Scripts\activate
-            pip install poetry==1.4.2
-            poetry install --with dev
+      - name: python setup
+        run: |
+          py -m venv .venv
+          .venv\Scripts\activate
+          pip install poetry==1.4.2
+          poetry install --with dev
       - name: Publish to pypi
         run: |
           .venv\Scripts\activate
