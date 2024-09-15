@@ -7,17 +7,22 @@ jobs:
       - uses: actions/checkout@v3
       - name: python setup
         run: |
+          python -m venv .venv
+          .venv\Scripts\activate
           pip install poetry==1.4.2
           python3 -m poetry install --with dev
       - name:  format check 
         run: |
+            .venv\Scripts\activate
             poetry run black --check .
             poetry run isort --check .
       - name: dependency check
         run: |
+            .venv\Scripts\activate
             poetry run deptry .
       - name: pytest
         run: |
+            .venv\Scripts\activate
             poetry run pytest --cov-report term --cov-report html --cov=./runefumbler .
       - name: upload test results
         uses: actions/upload-artifact@v3
