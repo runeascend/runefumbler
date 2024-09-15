@@ -10,7 +10,7 @@ jobs:
           py -m venv .venv
           .venv\Scripts\activate
           pip install poetry==1.4.2
-          python3 -m poetry install --with dev
+          poetry install --with dev
       - name:  format check 
         run: |
             .venv\Scripts\activate
