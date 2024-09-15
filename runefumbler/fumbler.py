@@ -2,14 +2,11 @@ import os
 import random
 import socket
 import time
-
+import json
 import pyautogui as mouse
 import win32gui
 
 positions = []
-
-test_string = "Swordfish : 178 : 183 : 100 : Gold amulet (u) : 122 : 137 : 100 : Swamp paste : 5 : 10 : 100 : Steam rune : 110 : 116 : 13 : Lava rune : 20 : 25 : 90 : Amethyst dart : 237 : 244 : 46 : Lantern lens : 13 : 18 : 125 : Dragon javelin : 883 : 907 : 117 :"
-
 
 class fumble_opp:
     def __init__(self, name, buy, sell, time):
@@ -23,9 +20,17 @@ class fumble_opp:
         print("Buy At: " + self.buy)
         print("Sell At: " + self.sell)
         print("Time In Pos: " + self.time)
+    
+    def to_json(self):
+        return json.dumps({
+            "name": self.name,
+            "buy": self.buy,
+            "sell": self.sell,
+            "time": self.time
+        })
 
 
-def build_trade_opps(savant_input):
+def build_trade_opps(savant_input) -> list[fumble_opp]:
     split_string = savant_input.split(":")
     split_string = [s.strip() for s in split_string]
     print(split_string)
@@ -40,6 +45,7 @@ def build_trade_opps(savant_input):
         trade_opps.append(opp)
     for opp in trade_opps:
         opp.show()
+    return trade_opps
 
 
 def start_server(host="192.168.1.70", port=12345):
