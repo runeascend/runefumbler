@@ -2,7 +2,7 @@ name: PR Check
 on: [pull_request]
 jobs:
   test:
-    runs-on: self-hosted
+    runs-on: org-level
     container:
       image: winamd64/python:3.11
     steps:
@@ -12,11 +12,15 @@ jobs:
           pip install poetry==1.4.2
           python3 -m poetry install --with dev
       - name:  format check 
-        run: make format-check
+        run: |
+            poetry run black --check .
+            poetry run isort --check .
       - name: dependency check
-        run: make dep-check
+        run: |
+            poetry run deptry .
       - name: pytest
-        run: make test
+        run: |
+            poetry run pytest --cov-report term --cov-report html --cov=./runefumbler .
       - name: upload test results
         uses: actions/upload-artifact@v2
         with:
