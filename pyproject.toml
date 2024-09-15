@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "runefumbler"
-version = "0.1.3"
+version = "0.1.4"
 description = "Don't be fumblin' no trades now"
 authors = ["None"]
 readme = "README.md"
