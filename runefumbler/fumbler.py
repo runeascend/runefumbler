@@ -1,13 +1,43 @@
+import argparse
 import json
 import os
 import random
 import socket
 import time
+import signal
+import pyautogui
+import pygetwindow
 
-import pyautogui as mouse
-import win32gui
+def alarm_handler(signum, frame):
+    raise TimeoutError
 
-positions = []
+def input_with_timeout(prompt, timeout):
+    # set signal handler
+    signal.signal(signal.SIG_DFL, alarm_handler)
+    signal.alarm(timeout) # produce SIGALRM in `timeout` seconds
+
+    try:
+        return input(prompt)
+    except TimeoutError:
+        print("Continuing, no user input")
+        return ""
+    finally:
+        signal.alarm(0) # cance
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Fumbler Time Baby")
+    parser.add_argument(
+        "--host", default="192.168.1.70", help="Server IP address"
+    )
+    parser.add_argument("--port", type=int, default=12345, help="Server port")
+    parser.add_argument(
+        "--username",
+        type=str,
+        default="DavTF",
+        help="Username of runescape account",
+    )
+    parser.add_argument("--clean", action="store_true", help="Clear the screen postion data")
+    return parser.parse_args()
 
 
 class fumble_opp:
@@ -33,26 +63,140 @@ class fumble_opp:
             }
         )
 
+class Position:
+    def __init__(self, buy_coord, sell_coord):
+        self.buy_coord = buy_coord
+        self.sell_coord = sell_coord
 
-def build_trade_opps(savant_input) -> list[fumble_opp]:
-    split_string = savant_input.split(":")
-    split_string = [s.strip() for s in split_string]
-    print(split_string)
-    trade_opps = []
-    for i in range(0, 32, 4):
-        opp = fumble_opp(
-            split_string[0 + i],
-            split_string[1 + i],
-            split_string[2 + i],
-            split_string[3 + i],
+    def setItem(self, opp: fumble_opp):
+        self.name = opp.name
+        self.buy_price = opp.buy
+        self.sell_price = opp.sell
+    
+    def to_dict(self):
+        return {
+                "buy_coord": self.buy_coord,
+                "sell_coord": self.sell_coord,
+            }
+
+class Trader:
+
+    def __init__(self, username):
+        self.positions: list[Position] = []
+        self.trade_opps = []
+        self.x = -1
+        self.y = -1
+        self.w = -1
+        self.h = -1
+        self.username = username
+
+    def get_sell_buy_positions(self):
+        time.sleep(2)
+        buy = pyautogui.position()
+        print(buy)
+        time.sleep(2)
+        sell = pyautogui.position()
+        print(sell)
+        self.positions.append(Position(buy, sell))
+
+    def analyze_window(self):
+        # Since it puts your username there might as well search for it.
+        windows: list[pygetwindow.Win32Window] = pygetwindow.getAllWindows()
+        for window in windows:
+            if self.username in window.title:
+                self.window = window
+                break
+
+        for i in range(0, 8):
+            self.get_sell_buy_positions()
+
+        self.window.activate()
+        return
+
+    def position_to_click(self, position: Position):
+        x = position.buy_coord[0]
+        y = position.buy_coord[1]
+        pyautogui.moveTo(
+            random.randint(x - 10, x + 10),
+            random.randint(y - 10, y + 10),
+            random.uniform(0.1, 1),
+            pyautogui.easeInOutSine,
         )
-        trade_opps.append(opp)
-    for opp in trade_opps:
-        opp.show()
-    return trade_opps
+        pyautogui.click()
+        pyautogui.typewrite(position.name)
 
+    def build_trade_opps(self, savant_input):
+        split_string = savant_input.split(":")
+        split_string = [s.strip() for s in split_string]
+        print(split_string)
+        opp = fumble_opp(
+            split_string[0], split_string[1], split_string[2], split_string[3]
+        )
+        if len(self.trade_opps) > 8:
+            self.trade_opps.pop(0)
 
-def start_server(host="192.168.1.70", port=12345):
+        self.trade_opps.append(opp)
+        index = 1
+        for opportunity in self.trade_opps:
+            print("Inv Slot: " + str(index))
+            print("Name: " + opportunity.name)
+            print("Buy: " + str(opportunity.buy))
+            print("Sell: " + str(opportunity.sell))
+            index += 1
+
+    def function_buy(self, number):
+        opp: fumble_opp = self.trade_opps.pop(number)
+        self.positions[number].setItem(opp)
+        print("Buy: " + str(opp.buy))
+        print("Sell: " + str(opp.sell))
+        print("Name: " + opp.name)
+        print(f"Buy on inv slot {number + 1}")
+        self.position_to_click(self.positions[number])
+
+    def function_sell(self, number):
+        print(f"Sell on slot {number + 1}")
+        self.position_to_click(number * 2 + 1)
+
+    def function_collect(self, number):
+        print(f"Collect on slot {number}")
+        # random sell or buy
+        # random click pos
+
+    def function_exit(self, number):
+        print(f"Exit on slot {number}")
+        # random sell or buy
+        # random click pos
+
+    def process_input(self, user_input):
+        number = int(user_input[0])
+        char = user_input[1].lower()
+
+        if char == "b":
+            self.function_buy(number - 1)
+        elif char == "s":
+            self.function_sell(number - 1)
+        elif char == "c":
+            self.function_collect(number - 1)
+        elif char == "e":
+            self.function_exit(number - 1)
+        else:
+            print("Invalid character input. Please use 'b', 's', 'c', or 'e'.")
+
+    def execute_trades(self):
+        user_input = input_with_timeout("Action: ", 3).strip()
+        if (
+            len(user_input) == 2
+            and user_input[0].isdigit()
+            and int(user_input[0]) in range(1, 9)
+        ):
+            self.process_input(user_input)
+        else:
+            print(
+                "Invalid input format. Please enter a number (1-8) followed by a character (b, s, c, e)."
+            )
+        time.sleep(.001)
+
+def start_server(trader: Trader, host="192.168.1.70", port=12345):
     # Create a TCP/IP socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -73,10 +217,12 @@ def start_server(host="192.168.1.70", port=12345):
 
             # Receive the data in small chunks and print it
             while True:
+                now = time.time()
                 data = connection.recv(1024)
                 if data:
                     os.system("cls")
-                    build_trade_opps(f'{data.decode("utf-8")}')
+                    trader.build_trade_opps(f'{data.decode("utf-8")}')
+                    trader.execute_trades()
 
                 else:
                     print("No more data from", client_address)
@@ -85,111 +231,22 @@ def start_server(host="192.168.1.70", port=12345):
             # Clean up the connection
             connection.close()
 
-
-def get_sell_buy_positions(positions):
-    time.sleep(2)
-    positions.append(mouse.position())
-    print(mouse.position())
-    time.sleep(2)
-    positions.append(mouse.position())
-    print(mouse.position())
-
-
-# Don't move your window after setting the positions we aren't that advanced
-def print_window(hwnd, wildcard):
-    window_text = win32gui.GetWindowText(hwnd)
-    if wildcard in window_text:
-        print(window_text)
-        rect = win32gui.GetWindowRect(hwnd)
-        x = rect[0]
-        y = rect[1]
-        w = rect[2] - x
-        h = rect[3] - y
-        win32gui.SetForegroundWindow(hwnd)
-
-        for i in range(0, 8):
-            get_sell_buy_positions(positions)
-
-        print(positions)
-
-        return True
-
-
-def analyze_window():
-    # Since it puts your username there might as well search for it.
-    win32gui.EnumWindows(print_window, "DavTF")
-    return
-
-
-def position_to_click(index):
-    x = positions[index][0]
-    y = positions[index][1]
-    mouse.moveTo(
-        random.randint(x - 10, x + 10),
-        random.randint(y - 10, y + 10),
-        random.uniform(0.1, 1),
-        mouse.easeInOutSine,
-    )
-    mouse.click()
-
-
-def function_buy(number):
-    print(f"Buy on inv slot {number + 1}")
-    position_to_click(number * 2)
-
-
-def function_sell(number):
-    print(f"Sell on slot {number + 1}")
-    position_to_click(number * 2 + 1)
-
-
-def function_collect(number):
-    print(f"Collect on slot {number}")
-    # random sell or buy
-    # random click pos
-
-
-def function_exit(number):
-    print(f"Exit on slot {number}")
-    # random sell or buy
-    # random click pos
-
-
-def process_input(user_input):
-    number = int(user_input[0])
-    char = user_input[1].lower()
-
-    if char == "b":
-        function_buy(number - 1)
-    elif char == "s":
-        function_sell(number - 1)
-    elif char == "c":
-        function_collect(number - 1)
-    elif char == "e":
-        function_exit(number - 1)
-    else:
-        print("Invalid character input. Please use 'b', 's', 'c', or 'e'.")
-
-
-def execute_trades():
-    while True:
-        user_input = input("Action: ").strip()
-        if (
-            len(user_input) == 2
-            and user_input[0].isdigit()
-            and int(user_input[0]) in range(1, 9)
-        ):
-            process_input(user_input)
-        else:
-            print(
-                "Invalid input format. Please enter a number (1-8) followed by a character (b, s, c, e)."
-            )
-
-
 def main():
-    start_server()
-    # analyze_window()
-    # execute_trades()
+    args = parse_args()
+    trader = Trader(username=args.username)
+    if args.clean or not os.path.exists("positions.json"):
+        trader.analyze_window()
+        with open("positions.json", "w") as f:
+            json_positions = [position.to_dict() for position in trader.positions]
+            json.dump(json_positions, f)
+    else:
+        with open("positions.json", "r") as f:
+            json_positons = json.load(f)
+            trader.positions = [
+                Position(buy_coord=position["buy_coord"], sell_coord=position["sell_coord"]) for position in json_positons
+            ]            
+    
+    start_server(trader)
 
 
 if __name__ == "__main__":
