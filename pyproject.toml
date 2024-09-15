@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Don't be fumblin' no trades now"
 authors = ["None"]
 readme = "README.md"
+include = ["runefumbler", "tests"]
 
 [tool.poetry.dependencies]
 python = "^3.11"
