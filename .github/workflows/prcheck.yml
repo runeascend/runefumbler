@@ -2,7 +2,9 @@ name: PR Check
 on: [pull_request]
 jobs:
   test:
-    runs-on: self-hosted
+    runs-on: 
+      - self-hosted
+      - Windows
     steps:
       - uses: actions/checkout@v3
       - name: python setup
