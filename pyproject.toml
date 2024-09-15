@@ -21,7 +21,7 @@ anyio = "^4.4.0"
 trio = "^0.26.2"
 
 [tool.poetry.scripts]
-runefumbler = runefumbler.fumbler:main
+runefumbler = "runefumbler.fumbler:main"
 
 [build-system]
 requires = ["poetry-core"]
