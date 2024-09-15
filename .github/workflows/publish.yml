@@ -94,4 +94,5 @@ jobs:
       - name: Publish to pypi
         run: |
           .venv\Scripts\activate
+          echo $POETRY_HTTP_BASIC_PASSWORD
           poetry publish --build --username __token__ --password $POETRY_HTTP_BASIC_PASSWORD
