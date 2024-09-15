@@ -1,12 +1,14 @@
+import json
 import os
 import random
 import socket
 import time
-import json
+
 import pyautogui as mouse
 import win32gui
 
 positions = []
+
 
 class fumble_opp:
     def __init__(self, name, buy, sell, time):
@@ -20,14 +22,16 @@ class fumble_opp:
         print("Buy At: " + self.buy)
         print("Sell At: " + self.sell)
         print("Time In Pos: " + self.time)
-    
+
     def to_json(self):
-        return json.dumps({
-            "name": self.name,
-            "buy": self.buy,
-            "sell": self.sell,
-            "time": self.time
-        })
+        return json.dumps(
+            {
+                "name": self.name,
+                "buy": self.buy,
+                "sell": self.sell,
+                "time": self.time,
+            }
+        )
 
 
 def build_trade_opps(savant_input) -> list[fumble_opp]:
