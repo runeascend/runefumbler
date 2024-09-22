@@ -1,11 +1,4 @@
-import { Button } from "@/components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardFooter,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useOpportunities, usePositions } from "./lib/api";
 import Opportunity from "./components/opportunity";
 import Position from "./components/position";
