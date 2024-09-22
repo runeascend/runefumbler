@@ -6,7 +6,7 @@ import {
 	useQueryClient,
 } from "@tanstack/react-query";
 
-const API_URL = "";
+const API_URL = "http://localhost:12346";
 
 interface GETRequest<O extends z.ZodTypeAny> {
 	method: "GET";
@@ -48,8 +48,8 @@ export const opportunitySchema = z.object({
 });
 
 export const positionSchema = z.object({
-	buy_coord: z.number(),
-	sell_coord: z.number(),
+	buy_coord: z.tuple([z.number(), z.number()]),
+	sell_coord: z.tuple([z.number(), z.number()]),
 	state: z.string(),
 	name: z.string(),
 	buy_price: z.number(),
