@@ -9,6 +9,8 @@ import tkinter as tk
 
 import pyautogui
 import pygetwindow
+import uvicorn
+from fastapi import Depends, FastAPI
 
 
 def parse_args():
@@ -46,32 +48,68 @@ class fumble_opp:
         print("Sell At: " + self.sell)
         print("Time In Pos: " + self.time)
 
-    def to_json(self):
-        return json.dumps(
-            {
-                "name": self.name,
-                "buy": self.buy,
-                "sell": self.sell,
-                "time": self.time,
-            }
-        )
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "buy": self.buy,
+            "sell": self.sell,
+            "time": self.time,
+            "ttl": self.ttl,
+        }
 
 
 class Position:
     def __init__(self, buy_coord, sell_coord):
         self.buy_coord = buy_coord
         self.sell_coord = sell_coord
+        self.state = "pending"
+        self.name = ""
+        self.buy_price = 0
+        self.sell_price = 0
 
-    def setItem(self, opp: fumble_opp):
+    def buy(self, opp: fumble_opp):
         self.name = opp.name
         self.buy_price = opp.buy
         self.sell_price = opp.sell
+        self.state = "buying"
+        x = self.buy_coord[0]
+        y = self.buy_coord[1]
+        pyautogui.moveTo(
+            random.randint(x - 10, x + 10),
+            random.randint(y - 10, y + 10),
+            random.uniform(0.1, 1),
+            pyautogui.easeInOutSine,
+        )
+        pyautogui.click()
+        pyautogui.typewrite(self.name)
+
+    def sell(self):
+        if self.state != "buying":
+            raise Exception("Can't sell if not in buying state")
+        self.state = "selling"
+        x = self.sel_coord[0]
+        y = self.sel_coord[1]
+        pyautogui.moveTo(
+            random.randint(x - 10, x + 10),
+            random.randint(y - 10, y + 10),
+            random.uniform(0.1, 1),
+            pyautogui.easeInOutSine,
+        )
+        pyautogui.click()
+        pyautogui.typewrite(self.name)
 
     def to_dict(self):
         return {
             "buy_coord": self.buy_coord,
             "sell_coord": self.sell_coord,
+            "state": self.state,
+            "name": self.name,
+            "buy_price": self.buy_price,
+            "sell_price": self.sell_price,
         }
+
+
+app = FastAPI()
 
 
 class Trader:
@@ -84,11 +122,6 @@ class Trader:
         self.h = -1
         self.username = username
         self.slots = slots
-        app = tk.Tk()
-        app.title("Fumbler UI")
-        app.geometry("800x500")  # Set the window size
-        self.ui = app
-        self.ui.protocol("WM_DELETE_WINDOW", self.exit_app)
 
     def get_sell_buy_positions(self):
         time.sleep(2)
@@ -116,67 +149,6 @@ class Trader:
         self.window.activate()
         return
 
-    def position_to_click(self, position: Position):
-        x = position.buy_coord[0]
-        y = position.buy_coord[1]
-        pyautogui.moveTo(
-            random.randint(x - 10, x + 10),
-            random.randint(y - 10, y + 10),
-            random.uniform(0.1, 1),
-            pyautogui.easeInOutSine,
-        )
-        pyautogui.click()
-        pyautogui.typewrite(position.name)
-
-    async def update_app(self):
-        for index, opportunity in enumerate(self.trade_opps):
-            frame = tk.Frame(
-                self.ui, padx=10, pady=5, relief="raised", borderwidth=2
-            )
-            frame.pack(fill="x", padx=5, pady=5)
-
-            # Slot label with item information
-            slot_label = tk.Label(
-                frame,
-                text=f"Slot {index}: {opportunity.name} - Buy: {opportunity.buy} / Sell: {opportunity.sell}",
-                font=("Arial", 12),
-            )
-            slot_label.pack(side="left")
-
-            # Buy button
-            buy_button = tk.Button(
-                frame,
-                text="Buy",
-                command=(lambda: self.function_buy(index - 1)),
-            )
-            buy_button.pack(side="left", padx=5)
-
-            # Sell button
-            sell_button = tk.Button(
-                frame,
-                text="Sell",
-                command=(lambda: self.function_sell(index - 1)),
-            )
-            sell_button.pack(side="left", padx=5)
-
-            # Collect button
-            collect_button = tk.Button(
-                frame,
-                text="Collect",
-                command=(lambda: self.function_collect(index - 1)),
-            )
-            collect_button.pack(side="left", padx=5)
-
-            # Exit button
-            exit_button = tk.Button(
-                frame,
-                text="Exit",
-                command=(lambda: self.function_exit(index - 1)),
-            )
-            exit_button.pack(side="left", padx=5)
-        self.ui.update()
-        await asyncio.sleep(10)
-
     async def build_trade_opps(self, savant_input):
         split_string = savant_input.split(":")
         split_string = [s.strip() for s in split_string]
@@ -194,26 +166,42 @@ class Trader:
         self.trade_opps.append(opp)
 
     async def update_trade_opps(self, connection):
-        while True:
-            data = connection.recv(1024)
-            if data:
-                await self.build_trade_opps(f'{data.decode("utf-8")}')
-            else:
-                print("No more data from", self.client_address)
-                break
+        try:
+            while True:
+                data = await asyncio.to_thread(
+                    connection.recv, 1024
+                )  # use asyncio.to_thread to avoid blocking
+                if data:
+                    await self.build_trade_opps(data.decode("utf-8"))
+                else:
+                    print(f"No more data from {self.client_address}")
+                    break
+        except Exception as e:
+            print(f"Error updating trade opportunities: {e}")
+        finally:
+            connection.close()
+
+    def get_opportunities(self):
+        print("Getting opportunities")
+        return json.dumps([opp.to_dict() for opp in self.trade_opps])
+
+    def cancel_opportunity(self, number):
+        self.trade_opps.pop(number)
+
+    def get_positions(self):
+        return json.dumps([position.to_dict() for position in self.positions])
 
     def function_buy(self, number):
         opp: fumble_opp = self.trade_opps.pop(number)
-        self.positions[number].setItem(opp)
+        self.positions[number].buy(opp)
         print("Buy: " + str(opp.buy))
         print("Sell: " + str(opp.sell))
         print("Name: " + opp.name)
         print(f"Buy on inv slot {number + 1}")
-        self.position_to_click(self.positions[number])
 
     def function_sell(self, number):
         print(f"Sell on slot {number + 1}")
-        self.position_to_click(number * 2 + 1)
+        self.positions[number].sell()
 
     def function_collect(self, number):
         print(f"Collect on slot {number}")
@@ -224,10 +212,6 @@ class Trader:
         print(f"Exit on slot {number}")
         # random sell or buy
         # random click pos
-
-    def exit_app(self):
-        print("Exiting...")
-        exit()
 
 
 def start_server(trader: Trader, host="", port=12345):
@@ -250,8 +234,14 @@ def start_server(trader: Trader, host="", port=12345):
     connection, client_address = server_socket.accept()
     trader.client_address = client_address
 
-    asyncio.ensure_future(trader.update_app())
+    # Properly schedule the trader update function
     asyncio.ensure_future(trader.update_trade_opps(connection))
+
+    # Start the uvicorn server as a background task
+    asyncio.ensure_future(
+        uvicorn.run(app, host=host, port=12346, log_level="info")
+    )
+
     loop = asyncio.get_event_loop()
 
     try:
@@ -266,6 +256,38 @@ def start_server(trader: Trader, host="", port=12345):
 def main():
     args = parse_args()
     trader = Trader(username=args.username, slots=args.slots)
+
+    def get_trader():
+        return trader
+
+    @app.get("/opportunities")
+    async def get_opportunities(trader: Trader = Depends(get_trader)):
+        return trader.get_opportunities()
+
+    @app.post("/delete_opportunity/{number}")
+    async def cancel_opportunity(number, trader: Trader = Depends(get_trader)):
+        trader.cancel_opportunity(number)
+
+    @app.get("/positions")
+    async def get_positions(trader: Trader = Depends(get_trader)):
+        return trader.get_positions()
+
+    @app.post("/buy/{number}")
+    async def function_buy(number, trader: Trader = Depends(get_trader)):
+        trader.function_buy(number)
+
+    @app.post("/sell/{number}")
+    async def function_sell(number, trader: Trader = Depends(get_trader)):
+        trader.function_sell(number)
+
+    @app.post("/collect/{number}")
+    async def function_collect(number, trader: Trader = Depends(get_trader)):
+        trader.function_collect(number)
+
+    @app.post("/exit/{number}")
+    async def function_exit(number, trader: Trader = Depends(get_trader)):
+        trader.function_exit(number)
+
     if args.clean or not os.path.exists("positions.json"):
         trader.analyze_window()
         with open("positions.json", "w") as f:
@@ -294,7 +316,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 """
 Mutex lock for whether or not we're currently executing an action
