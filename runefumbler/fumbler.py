@@ -2,19 +2,22 @@ import argparse
 import json
 import os
 import random
+import signal
 import socket
 import time
-import signal
+
 import pyautogui
 import pygetwindow
+
 
 def alarm_handler(signum, frame):
     raise TimeoutError
 
+
 def input_with_timeout(prompt, timeout):
     # set signal handler
     signal.signal(signal.SIG_DFL, alarm_handler)
-    signal.alarm(timeout) # produce SIGALRM in `timeout` seconds
+    signal.alarm(timeout)  # produce SIGALRM in `timeout` seconds
 
     try:
         return input(prompt)
@@ -22,7 +25,8 @@ def input_with_timeout(prompt, timeout):
         print("Continuing, no user input")
         return ""
     finally:
-        signal.alarm(0) # cance
+        signal.alarm(0)  # cance
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fumbler Time Baby")
@@ -36,7 +40,9 @@ def parse_args():
         default="DavTF",
         help="Username of runescape account",
     )
-    parser.add_argument("--clean", action="store_true", help="Clear the screen postion data")
+    parser.add_argument(
+        "--clean", action="store_true", help="Clear the screen postion data"
+    )
     return parser.parse_args()
 
 
@@ -63,6 +69,7 @@ class fumble_opp:
             }
         )
 
+
 class Position:
     def __init__(self, buy_coord, sell_coord):
         self.buy_coord = buy_coord
@@ -72,12 +79,13 @@ class Position:
         self.name = opp.name
         self.buy_price = opp.buy
         self.sell_price = opp.sell
-    
+
     def to_dict(self):
         return {
-                "buy_coord": self.buy_coord,
-                "sell_coord": self.sell_coord,
-            }
+            "buy_coord": self.buy_coord,
+            "sell_coord": self.sell_coord,
+        }
+
 
 class Trader:
 
@@ -194,7 +202,8 @@ class Trader:
             print(
                 "Invalid input format. Please enter a number (1-8) followed by a character (b, s, c, e)."
             )
-        time.sleep(.001)
+        time.sleep(0.001)
+
 
 def start_server(trader: Trader, host="192.168.1.70", port=12345):
     # Create a TCP/IP socket
@@ -231,21 +240,28 @@ def start_server(trader: Trader, host="192.168.1.70", port=12345):
             # Clean up the connection
             connection.close()
 
+
 def main():
     args = parse_args()
     trader = Trader(username=args.username)
     if args.clean or not os.path.exists("positions.json"):
         trader.analyze_window()
         with open("positions.json", "w") as f:
-            json_positions = [position.to_dict() for position in trader.positions]
+            json_positions = [
+                position.to_dict() for position in trader.positions
+            ]
             json.dump(json_positions, f)
     else:
         with open("positions.json", "r") as f:
             json_positons = json.load(f)
             trader.positions = [
-                Position(buy_coord=position["buy_coord"], sell_coord=position["sell_coord"]) for position in json_positons
-            ]            
-    
+                Position(
+                    buy_coord=position["buy_coord"],
+                    sell_coord=position["sell_coord"],
+                )
+                for position in json_positons
+            ]
+
     start_server(trader)
 
 
