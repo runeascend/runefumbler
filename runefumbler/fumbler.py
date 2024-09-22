@@ -2,31 +2,30 @@ import argparse
 import json
 import os
 import random
-import signal
 import socket
 import time
-
+import threading
 import pyautogui
 import pygetwindow
-
-
-def alarm_handler(signum, frame):
-    raise TimeoutError
-
-
+import tkinter as tk
+from tkinter import messagebox
 def input_with_timeout(prompt, timeout):
-    # set signal handler
-    signal.signal(signal.SIG_DFL, alarm_handler)
-    signal.alarm(timeout)  # produce SIGALRM in `timeout` seconds
+    def timeout_handler():
+        print("\nTimeout! Continuing to the next iteration...")
+        raise TimeoutError
 
+    # Start the timer
+    timer = threading.Timer(timeout, timeout_handler)
+    timer.start()
+    
     try:
-        return input(prompt)
+        # Try to get user input
+        user_input = input(prompt)
+        timer.cancel()  # Cancel the timer if input is received
+        return user_input
     except TimeoutError:
-        print("Continuing, no user input")
-        return ""
-    finally:
-        signal.alarm(0)  # cance
-
+        # Return None if timed out
+        return None
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fumbler Time Baby")
@@ -42,6 +41,9 @@ def parse_args():
     )
     parser.add_argument(
         "--clean", action="store_true", help="Clear the screen postion data"
+    )
+    parser.add_argument(
+        "--slots", type=int, default=8, help="Number of inventory slots"
     )
     return parser.parse_args()
 
@@ -89,7 +91,7 @@ class Position:
 
 class Trader:
 
-    def __init__(self, username):
+    def __init__(self, username, slots=8):
         self.positions: list[Position] = []
         self.trade_opps = []
         self.x = -1
@@ -97,7 +99,10 @@ class Trader:
         self.w = -1
         self.h = -1
         self.username = username
-
+        self.slots = slots
+        self.ui = tk.Tk()
+        self.ui.title("Fumbler UI")
+        self.ui.geometry("800x500")  # Set the window size
     def get_sell_buy_positions(self):
         time.sleep(2)
         buy = pyautogui.position()
@@ -115,7 +120,8 @@ class Trader:
                 self.window = window
                 break
 
-        for i in range(0, 8):
+        for i in range(0, self.slots):
+            print(f"Please move your mouse to the buy position for slot {i + 1}")
             self.get_sell_buy_positions()
 
         self.window.activate()
@@ -140,12 +146,40 @@ class Trader:
         opp = fumble_opp(
             split_string[0], split_string[1], split_string[2], split_string[3]
         )
-        if len(self.trade_opps) > 8:
+        if len(self.trade_opps) > self.slots:
             self.trade_opps.pop(0)
 
         self.trade_opps.append(opp)
         index = 1
         for opportunity in self.trade_opps:
+            frame = tk.Frame(self.ui, padx=10, pady=5, relief="raised", borderwidth=2)
+            frame.pack(fill='x', padx=5, pady=5)
+
+            # Slot label with item information
+            slot_label = tk.Label(
+                frame,
+                text=f"Slot {index}: {opportunity.name} - Buy: {opportunity.buy} / Sell: {opportunity.sell}",
+                font=("Arial", 12),
+            )
+            slot_label.pack(side='left')
+
+            # Buy button
+            buy_button = tk.Button(frame, text="Buy", command=self.function_buy(index - 1))
+            buy_button.pack(side='left', padx=5)
+
+            # Sell button
+            sell_button = tk.Button(frame, text="Sell", command=self.function_sell(index - 1))
+            sell_button.pack(side='left', padx=5)
+
+            # Collect button
+            collect_button = tk.Button(frame, text="Collect", command=self.function_collect(index - 1))
+            collect_button.pack(side='left', padx=5)
+
+            # Exit button
+            exit_button = tk.Button(frame, text="Exit", command=self.function_exit(index - 1))
+            exit_button.pack(side='left', padx=5)
+
+
             print("Inv Slot: " + str(index))
             print("Name: " + opportunity.name)
             print("Buy: " + str(opportunity.buy))
@@ -175,6 +209,10 @@ class Trader:
         # random sell or buy
         # random click pos
 
+    def exit_app(self):
+        print("Exiting...")
+        exit()
+
     def process_input(self, user_input):
         number = int(user_input[0])
         char = user_input[1].lower()
@@ -190,24 +228,10 @@ class Trader:
         else:
             print("Invalid character input. Please use 'b', 's', 'c', or 'e'.")
 
-    def execute_trades(self):
-        user_input = input_with_timeout("Action: ", 3).strip()
-        if (
-            len(user_input) == 2
-            and user_input[0].isdigit()
-            and int(user_input[0]) in range(1, 9)
-        ):
-            self.process_input(user_input)
-        else:
-            print(
-                "Invalid input format. Please enter a number (1-8) followed by a character (b, s, c, e)."
-            )
-        time.sleep(0.001)
 
-
-def start_server(trader: Trader, host="192.168.1.70", port=12345):
+def start_server(trader: Trader, host="", port=12345):
     # Create a TCP/IP socket
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, )
 
     # Bind the socket to the address and port
     server_address = (host, port)
@@ -216,34 +240,37 @@ def start_server(trader: Trader, host="192.168.1.70", port=12345):
     # Listen for incoming connections
     server_socket.listen(1)
     print(f"Starting server on {host}:{port}")
+    try:
+        while True:
+            # Wait for a connection
+            print("Waiting for a connection...")
+            connection, client_address = server_socket.accept()
+            try:
+                print(f"Connection from {client_address}")
 
-    while True:
-        # Wait for a connection
-        print("Waiting for a connection...")
-        connection, client_address = server_socket.accept()
-        try:
-            print(f"Connection from {client_address}")
+                # Receive the data in small chunks and print it
+                while True:
+                    now = time.time()
+                    data = connection.recv(1024)
+                    if data:
+                        os.system("cls")
+                        trader.build_trade_opps(f'{data.decode("utf-8")}')
+                        trader.ui.mainloop()
 
-            # Receive the data in small chunks and print it
-            while True:
-                now = time.time()
-                data = connection.recv(1024)
-                if data:
-                    os.system("cls")
-                    trader.build_trade_opps(f'{data.decode("utf-8")}')
-                    trader.execute_trades()
-
-                else:
-                    print("No more data from", client_address)
-                    break
-        finally:
-            # Clean up the connection
-            connection.close()
+                    else:
+                        print("No more data from", client_address)
+                        break
+            finally:
+                # Clean up the connection
+                connection.close()
+    except KeyboardInterrupt:
+        print("Closing server...")
+        server_socket.close()
 
 
 def main():
     args = parse_args()
-    trader = Trader(username=args.username)
+    trader = Trader(username=args.username, slots=args.slots)
     if args.clean or not os.path.exists("positions.json"):
         trader.analyze_window()
         with open("positions.json", "w") as f:
@@ -254,6 +281,9 @@ def main():
     else:
         with open("positions.json", "r") as f:
             json_positons = json.load(f)
+            if len(json_positons) != args.slots:
+                print("Invalid number of positions in file, re-run with --clean")
+                exit()
             trader.positions = [
                 Position(
                     buy_coord=position["buy_coord"],
@@ -262,7 +292,7 @@ def main():
                 for position in json_positons
             ]
 
-    start_server(trader)
+    start_server(trader, args.host)
 
 
 if __name__ == "__main__":
