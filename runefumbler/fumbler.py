@@ -1,31 +1,15 @@
 import argparse
+import asyncio
 import json
 import os
 import random
 import socket
 import time
-import threading
+import tkinter as tk
+
 import pyautogui
 import pygetwindow
-import tkinter as tk
-from tkinter import messagebox
-def input_with_timeout(prompt, timeout):
-    def timeout_handler():
-        print("\nTimeout! Continuing to the next iteration...")
-        raise TimeoutError
 
-    # Start the timer
-    timer = threading.Timer(timeout, timeout_handler)
-    timer.start()
-    
-    try:
-        # Try to get user input
-        user_input = input(prompt)
-        timer.cancel()  # Cancel the timer if input is received
-        return user_input
-    except TimeoutError:
-        # Return None if timed out
-        return None
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Fumbler Time Baby")
@@ -90,16 +74,6 @@ class Position:
         }
 
 
-
-class TraderUI(tk.Toplevel):
-    def __init__(self, app):
-        tk.Toplevel.__init__(self,app) #master have to be Toplevel, Tk or subclass of Tk/Toplevel
-        self.title("Fumbler UI")
-        self.geometry("800x500")  # Set the window size
-
-    def callback(self): pass
-
-
 class Trader:
     def __init__(self, username, slots=8):
         self.positions: list[Position] = []
@@ -111,7 +85,11 @@ class Trader:
         self.username = username
         self.slots = slots
         app = tk.Tk()
-        self.ui = TraderUI(app)
+        app.title("Fumbler UI")
+        app.geometry("800x500")  # Set the window size
+        self.ui = app
+        self.ui.protocol("WM_DELETE_WINDOW", self.exit_app)
+
     def get_sell_buy_positions(self):
         time.sleep(2)
         buy = pyautogui.position()
@@ -130,7 +108,9 @@ class Trader:
                 break
 
         for i in range(0, self.slots):
-            print(f"Please move your mouse to the buy position for slot {i + 1}")
+            print(
+                f"Please move your mouse to the buy position for slot {i + 1}"
+            )
             self.get_sell_buy_positions()
 
         self.window.activate()
@@ -148,10 +128,58 @@ class Trader:
         pyautogui.click()
         pyautogui.typewrite(position.name)
 
-    def build_trade_opps(self, savant_input):
+    async def update_app(self):
+        for index, opportunity in enumerate(self.trade_opps):
+            frame = tk.Frame(
+                self.ui, padx=10, pady=5, relief="raised", borderwidth=2
+            )
+            frame.pack(fill="x", padx=5, pady=5)
+
+            # Slot label with item information
+            slot_label = tk.Label(
+                frame,
+                text=f"Slot {index}: {opportunity.name} - Buy: {opportunity.buy} / Sell: {opportunity.sell}",
+                font=("Arial", 12),
+            )
+            slot_label.pack(side="left")
+
+            # Buy button
+            buy_button = tk.Button(
+                frame,
+                text="Buy",
+                command=(lambda: self.function_buy(index - 1)),
+            )
+            buy_button.pack(side="left", padx=5)
+
+            # Sell button
+            sell_button = tk.Button(
+                frame,
+                text="Sell",
+                command=(lambda: self.function_sell(index - 1)),
+            )
+            sell_button.pack(side="left", padx=5)
+
+            # Collect button
+            collect_button = tk.Button(
+                frame,
+                text="Collect",
+                command=(lambda: self.function_collect(index - 1)),
+            )
+            collect_button.pack(side="left", padx=5)
+
+            # Exit button
+            exit_button = tk.Button(
+                frame,
+                text="Exit",
+                command=(lambda: self.function_exit(index - 1)),
+            )
+            exit_button.pack(side="left", padx=5)
+        self.ui.update()
+        await asyncio.sleep(10)
+
+    async def build_trade_opps(self, savant_input):
         split_string = savant_input.split(":")
         split_string = [s.strip() for s in split_string]
-        print(split_string)
         opp = fumble_opp(
             split_string[0], split_string[1], split_string[2], split_string[3]
         )
@@ -162,46 +190,17 @@ class Trader:
             else:
                 print("No slots available")
                 return
-            
+
         self.trade_opps.append(opp)
-        index = 1
 
-        for opportunity in self.trade_opps:
-            print(self.trade_opps)
-            frame = tk.Frame(self.ui, padx=10, pady=5, relief="raised", borderwidth=2)
-            frame.pack(fill='x', padx=5, pady=5)
-
-            # Slot label with item information
-            slot_label = tk.Label(
-                frame,
-                text=f"Slot {index}: {opportunity.name} - Buy: {opportunity.buy} / Sell: {opportunity.sell}",
-                font=("Arial", 12),
-            )
-            slot_label.pack(side='left')
-
-            # Buy button
-            buy_button = tk.Button(frame, text="Buy", command=(lambda: self.function_buy(index - 1)))
-            buy_button.pack(side='left', padx=5)
-
-            # Sell button
-            sell_button = tk.Button(frame, text="Sell", command=(lambda: self.function_sell(index - 1)))
-            sell_button.pack(side='left', padx=5)
-
-            # Collect button
-            collect_button = tk.Button(frame, text="Collect", command=(lambda: self.function_collect(index - 1)))
-            collect_button.pack(side='left', padx=5)
-
-            # Exit button
-            exit_button = tk.Button(frame, text="Exit", command=(lambda: self.function_exit(index - 1)))
-            exit_button.pack(side='left', padx=5)
-
-            print("Inv Slot: " + str(index))
-            print("Name: " + opportunity.name)
-            print("Buy: " + str(opportunity.buy))
-            print("Sell: " + str(opportunity.sell))
-            index += 1
-        self.ui.update()
-
+    async def update_trade_opps(self, connection):
+        while True:
+            data = connection.recv(1024)
+            if data:
+                await self.build_trade_opps(f'{data.decode("utf-8")}')
+            else:
+                print("No more data from", self.client_address)
+                break
 
     def function_buy(self, number):
         opp: fumble_opp = self.trade_opps.pop(number)
@@ -230,9 +229,13 @@ class Trader:
         print("Exiting...")
         exit()
 
+
 def start_server(trader: Trader, host="", port=12345):
     # Create a TCP/IP socket
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, )
+    server_socket = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_STREAM,
+    )
 
     # Bind the socket to the address and port
     server_address = (host, port)
@@ -241,31 +244,23 @@ def start_server(trader: Trader, host="", port=12345):
     # Listen for incoming connections
     server_socket.listen(1)
     print(f"Starting server on {host}:{port}")
-    try:
-        while True:
-            # Wait for a connection
-            print("Waiting for a connection...")
-            connection, client_address = server_socket.accept()
-            try:
-                print(f"Connection from {client_address}")
 
-                # Receive the data in small chunks and print it
-                while True:
-                    now = time.time()
-                    data = connection.recv(1024)
-                    if data:
-                        os.system("cls")
-                        trader.build_trade_opps(f'{data.decode("utf-8")}')
-                        time.sleep(1)
-                    else:
-                        print("No more data from", client_address)
-                        break
-            finally:
-                # Clean up the connection
-                connection.close()
+    # Wait for a connection
+    print("Waiting for a connection...")
+    connection, client_address = server_socket.accept()
+    trader.client_address = client_address
+
+    asyncio.ensure_future(trader.update_app())
+    asyncio.ensure_future(trader.update_trade_opps(connection))
+    loop = asyncio.get_event_loop()
+
+    try:
+        loop.run_forever()
     except KeyboardInterrupt:
         print("Closing server...")
-        server_socket.close()
+    finally:
+        # Clean up the connection
+        connection.close()
 
 
 def main():
@@ -282,7 +277,9 @@ def main():
         with open("positions.json", "r") as f:
             json_positons = json.load(f)
             if len(json_positons) != args.slots:
-                print("Invalid number of positions in file, re-run with --clean")
+                print(
+                    "Invalid number of positions in file, re-run with --clean"
+                )
                 exit()
             trader.positions = [
                 Position(
