@@ -49,11 +49,12 @@ def parse_args():
 
 
 class fumble_opp:
-    def __init__(self, name, buy, sell, time):
+    def __init__(self, name, buy, sell, t):
         self.name = name
         self.buy = buy
         self.sell = sell
-        self.time = time
+        self.time = t
+        self.ttl = time.time() + 60
 
     def show(self):
         print("Name: " + self.name)
@@ -89,8 +90,17 @@ class Position:
         }
 
 
-class Trader:
 
+class TraderUI(tk.Toplevel):
+    def __init__(self, app):
+        tk.Toplevel.__init__(self,app) #master have to be Toplevel, Tk or subclass of Tk/Toplevel
+        self.title("Fumbler UI")
+        self.geometry("800x500")  # Set the window size
+
+    def callback(self): pass
+
+
+class Trader:
     def __init__(self, username, slots=8):
         self.positions: list[Position] = []
         self.trade_opps = []
@@ -100,9 +110,8 @@ class Trader:
         self.h = -1
         self.username = username
         self.slots = slots
-        self.ui = tk.Tk()
-        self.ui.title("Fumbler UI")
-        self.ui.geometry("800x500")  # Set the window size
+        app = tk.Tk()
+        self.ui = TraderUI(app)
     def get_sell_buy_positions(self):
         time.sleep(2)
         buy = pyautogui.position()
@@ -147,11 +156,18 @@ class Trader:
             split_string[0], split_string[1], split_string[2], split_string[3]
         )
         if len(self.trade_opps) > self.slots:
-            self.trade_opps.pop(0)
-
+            if time.time() > self.trade_opps[0].ttl:
+                stale = self.trade_opps.pop(0)
+                print("Stale: " + stale.name)
+            else:
+                print("No slots available")
+                return
+            
         self.trade_opps.append(opp)
         index = 1
+
         for opportunity in self.trade_opps:
+            print(self.trade_opps)
             frame = tk.Frame(self.ui, padx=10, pady=5, relief="raised", borderwidth=2)
             frame.pack(fill='x', padx=5, pady=5)
 
@@ -164,27 +180,28 @@ class Trader:
             slot_label.pack(side='left')
 
             # Buy button
-            buy_button = tk.Button(frame, text="Buy", command=self.function_buy(index - 1))
+            buy_button = tk.Button(frame, text="Buy", command=(lambda: self.function_buy(index - 1)))
             buy_button.pack(side='left', padx=5)
 
             # Sell button
-            sell_button = tk.Button(frame, text="Sell", command=self.function_sell(index - 1))
+            sell_button = tk.Button(frame, text="Sell", command=(lambda: self.function_sell(index - 1)))
             sell_button.pack(side='left', padx=5)
 
             # Collect button
-            collect_button = tk.Button(frame, text="Collect", command=self.function_collect(index - 1))
+            collect_button = tk.Button(frame, text="Collect", command=(lambda: self.function_collect(index - 1)))
             collect_button.pack(side='left', padx=5)
 
             # Exit button
-            exit_button = tk.Button(frame, text="Exit", command=self.function_exit(index - 1))
+            exit_button = tk.Button(frame, text="Exit", command=(lambda: self.function_exit(index - 1)))
             exit_button.pack(side='left', padx=5)
-
 
             print("Inv Slot: " + str(index))
             print("Name: " + opportunity.name)
             print("Buy: " + str(opportunity.buy))
             print("Sell: " + str(opportunity.sell))
             index += 1
+        self.ui.update()
+
 
     def function_buy(self, number):
         opp: fumble_opp = self.trade_opps.pop(number)
@@ -213,22 +230,6 @@ class Trader:
         print("Exiting...")
         exit()
 
-    def process_input(self, user_input):
-        number = int(user_input[0])
-        char = user_input[1].lower()
-
-        if char == "b":
-            self.function_buy(number - 1)
-        elif char == "s":
-            self.function_sell(number - 1)
-        elif char == "c":
-            self.function_collect(number - 1)
-        elif char == "e":
-            self.function_exit(number - 1)
-        else:
-            print("Invalid character input. Please use 'b', 's', 'c', or 'e'.")
-
-
 def start_server(trader: Trader, host="", port=12345):
     # Create a TCP/IP socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, )
@@ -255,8 +256,7 @@ def start_server(trader: Trader, host="", port=12345):
                     if data:
                         os.system("cls")
                         trader.build_trade_opps(f'{data.decode("utf-8")}')
-                        trader.ui.mainloop()
-
+                        time.sleep(1)
                     else:
                         print("No more data from", client_address)
                         break
