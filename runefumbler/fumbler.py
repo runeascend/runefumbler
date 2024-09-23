@@ -2,15 +2,16 @@ import argparse
 import asyncio
 import json
 import os
+import uvicorn
+
 import random
 import socket
 import time
 import tkinter as tk
+from fastapi import FastAPI, Depends
 
 import pyautogui
 import pygetwindow
-import uvicorn
-from fastapi import Depends, FastAPI
 
 
 def parse_args():
@@ -50,12 +51,13 @@ class fumble_opp:
 
     def to_dict(self):
         return {
-            "name": self.name,
-            "buy": self.buy,
-            "sell": self.sell,
-            "time": self.time,
-            "ttl": self.ttl,
+                "name": self.name,
+                "buy": self.buy,
+                "sell": self.sell,
+                "time": self.time,
+                "ttl": self.ttl,
         }
+
 
 
 class Position:
@@ -97,7 +99,6 @@ class Position:
         )
         pyautogui.click()
         pyautogui.typewrite(self.name)
-
     def to_dict(self):
         return {
             "buy_coord": self.buy_coord,
@@ -106,10 +107,13 @@ class Position:
             "name": self.name,
             "buy_price": self.buy_price,
             "sell_price": self.sell_price,
+
         }
+    
 
 
 app = FastAPI()
+
 
 
 class Trader:
@@ -122,7 +126,7 @@ class Trader:
         self.h = -1
         self.username = username
         self.slots = slots
-
+        
     def get_sell_buy_positions(self):
         time.sleep(2)
         buy = pyautogui.position()
@@ -149,6 +153,7 @@ class Trader:
         self.window.activate()
         return
 
+
     async def build_trade_opps(self, savant_input):
         split_string = savant_input.split(":")
         split_string = [s.strip() for s in split_string]
@@ -168,28 +173,29 @@ class Trader:
     async def update_trade_opps(self, connection):
         try:
             while True:
-                data = await asyncio.to_thread(
-                    connection.recv, 1024
-                )  # use asyncio.to_thread to avoid blocking
+                data = await asyncio.to_thread(connection.recv, 1024)  # Non-blocking receive
                 if data:
                     await self.build_trade_opps(data.decode("utf-8"))
                 else:
-                    print(f"No more data from {self.client_address}")
+                    print("No more data from", self.client_address)
                     break
+        except asyncio.CancelledError:
+            print("Task cancelled")
         except Exception as e:
-            print(f"Error updating trade opportunities: {e}")
+            print(f"Error in update_trade_opps: {e}")
         finally:
             connection.close()
 
+
     def get_opportunities(self):
         print("Getting opportunities")
-        return json.dumps([opp.to_dict() for opp in self.trade_opps])
+        return [opp.to_dict() for opp in self.trade_opps]
 
     def cancel_opportunity(self, number):
         self.trade_opps.pop(number)
 
     def get_positions(self):
-        return json.dumps([position.to_dict() for position in self.positions])
+        return [position.to_dict() for position in self.positions]
 
     def function_buy(self, number):
         opp: fumble_opp = self.trade_opps.pop(number)
@@ -202,7 +208,7 @@ class Trader:
     def function_sell(self, number):
         print(f"Sell on slot {number + 1}")
         self.positions[number].sell()
-
+        
     def function_collect(self, number):
         print(f"Collect on slot {number}")
         # random sell or buy
@@ -212,7 +218,6 @@ class Trader:
         print(f"Exit on slot {number}")
         # random sell or buy
         # random click pos
-
 
 def start_server(trader: Trader, host="", port=12345):
     # Create a TCP/IP socket
@@ -234,14 +239,11 @@ def start_server(trader: Trader, host="", port=12345):
     connection, client_address = server_socket.accept()
     trader.client_address = client_address
 
-    # Properly schedule the trader update function
     asyncio.ensure_future(trader.update_trade_opps(connection))
-
-    # Start the uvicorn server as a background task
+    # Start the uvicorn server in the background
     asyncio.ensure_future(
-        uvicorn.run(app, host=host, port=12346, log_level="info")
-    )
-
+        uvicorn.run(app, host="localhost", port=12346, loop="asyncio", log_level="info")
+    )    
     loop = asyncio.get_event_loop()
 
     try:
@@ -253,40 +255,43 @@ def start_server(trader: Trader, host="", port=12345):
         connection.close()
 
 
+
+
+
 def main():
     args = parse_args()
     trader = Trader(username=args.username, slots=args.slots)
-
     def get_trader():
         return trader
 
     @app.get("/opportunities")
     async def get_opportunities(trader: Trader = Depends(get_trader)):
-        return trader.get_opportunities()
-
+        return  trader.get_opportunities()
+    
     @app.post("/delete_opportunity/{number}")
     async def cancel_opportunity(number, trader: Trader = Depends(get_trader)):
         trader.cancel_opportunity(number)
-
+    
     @app.get("/positions")
     async def get_positions(trader: Trader = Depends(get_trader)):
         return trader.get_positions()
-
+    
     @app.post("/buy/{number}")
     async def function_buy(number, trader: Trader = Depends(get_trader)):
         trader.function_buy(number)
-
+    
     @app.post("/sell/{number}")
     async def function_sell(number, trader: Trader = Depends(get_trader)):
         trader.function_sell(number)
-
+    
     @app.post("/collect/{number}")
     async def function_collect(number, trader: Trader = Depends(get_trader)):
         trader.function_collect(number)
-
+    
     @app.post("/exit/{number}")
     async def function_exit(number, trader: Trader = Depends(get_trader)):
         trader.function_exit(number)
+
 
     if args.clean or not os.path.exists("positions.json"):
         trader.analyze_window()
@@ -312,7 +317,6 @@ def main():
             ]
 
     start_server(trader, args.host)
-
 
 if __name__ == "__main__":
     main()
