@@ -1,31 +1,17 @@
 import argparse
+import asyncio
 import json
 import os
+import uvicorn
+
 import random
-import signal
 import socket
 import time
+import tkinter as tk
+from fastapi import FastAPI, Depends
 
 import pyautogui
 import pygetwindow
-
-
-def alarm_handler(signum, frame):
-    raise TimeoutError
-
-
-def input_with_timeout(prompt, timeout):
-    # set signal handler
-    signal.signal(signal.SIG_DFL, alarm_handler)
-    signal.alarm(timeout)  # produce SIGALRM in `timeout` seconds
-
-    try:
-        return input(prompt)
-    except TimeoutError:
-        print("Continuing, no user input")
-        return ""
-    finally:
-        signal.alarm(0)  # cance
 
 
 def parse_args():
@@ -43,15 +29,19 @@ def parse_args():
     parser.add_argument(
         "--clean", action="store_true", help="Clear the screen postion data"
     )
+    parser.add_argument(
+        "--slots", type=int, default=8, help="Number of inventory slots"
+    )
     return parser.parse_args()
 
 
 class fumble_opp:
-    def __init__(self, name, buy, sell, time):
+    def __init__(self, name, buy, sell, t):
         self.name = name
         self.buy = buy
         self.sell = sell
-        self.time = time
+        self.time = t
+        self.ttl = time.time() + 60
 
     def show(self):
         print("Name: " + self.name)
@@ -59,37 +49,75 @@ class fumble_opp:
         print("Sell At: " + self.sell)
         print("Time In Pos: " + self.time)
 
-    def to_json(self):
-        return json.dumps(
-            {
+    def to_dict(self):
+        return {
                 "name": self.name,
                 "buy": self.buy,
                 "sell": self.sell,
                 "time": self.time,
-            }
-        )
+                "ttl": self.ttl,
+        }
+
 
 
 class Position:
     def __init__(self, buy_coord, sell_coord):
         self.buy_coord = buy_coord
         self.sell_coord = sell_coord
+        self.state = "pending"
+        self.name = ""
+        self.buy_price = 0
+        self.sell_price = 0
 
-    def setItem(self, opp: fumble_opp):
+    def buy(self, opp: fumble_opp):
         self.name = opp.name
         self.buy_price = opp.buy
         self.sell_price = opp.sell
+        self.state = "buying"
+        x = self.buy_coord[0]
+        y = self.buy_coord[1]
+        pyautogui.moveTo(
+            random.randint(x - 10, x + 10),
+            random.randint(y - 10, y + 10),
+            random.uniform(0.1, 1),
+            pyautogui.easeInOutSine,
+        )
+        pyautogui.click()
+        pyautogui.typewrite(self.name)
 
+    def sell(self):
+        if self.state != "buying":
+            raise Exception("Can't sell if not in buying state")
+        self.state = "selling"
+        x = self.sel_coord[0]
+        y = self.sel_coord[1]
+        pyautogui.moveTo(
+            random.randint(x - 10, x + 10),
+            random.randint(y - 10, y + 10),
+            random.uniform(0.1, 1),
+            pyautogui.easeInOutSine,
+        )
+        pyautogui.click()
+        pyautogui.typewrite(self.name)
     def to_dict(self):
         return {
             "buy_coord": self.buy_coord,
             "sell_coord": self.sell_coord,
+            "state": self.state,
+            "name": self.name,
+            "buy_price": self.buy_price,
+            "sell_price": self.sell_price,
+
         }
+    
+
+
+app = FastAPI()
+
 
 
 class Trader:
-
-    def __init__(self, username):
+    def __init__(self, username, slots=8):
         self.positions: list[Position] = []
         self.trade_opps = []
         self.x = -1
@@ -97,7 +125,8 @@ class Trader:
         self.w = -1
         self.h = -1
         self.username = username
-
+        self.slots = slots
+        
     def get_sell_buy_positions(self):
         time.sleep(2)
         buy = pyautogui.position()
@@ -115,56 +144,71 @@ class Trader:
                 self.window = window
                 break
 
-        for i in range(0, 8):
+        for i in range(0, self.slots):
+            print(
+                f"Please move your mouse to the buy position for slot {i + 1}"
+            )
             self.get_sell_buy_positions()
 
         self.window.activate()
         return
 
-    def position_to_click(self, position: Position):
-        x = position.buy_coord[0]
-        y = position.buy_coord[1]
-        pyautogui.moveTo(
-            random.randint(x - 10, x + 10),
-            random.randint(y - 10, y + 10),
-            random.uniform(0.1, 1),
-            pyautogui.easeInOutSine,
-        )
-        pyautogui.click()
-        pyautogui.typewrite(position.name)
 
-    def build_trade_opps(self, savant_input):
+    async def build_trade_opps(self, savant_input):
         split_string = savant_input.split(":")
         split_string = [s.strip() for s in split_string]
-        print(split_string)
         opp = fumble_opp(
             split_string[0], split_string[1], split_string[2], split_string[3]
         )
-        if len(self.trade_opps) > 8:
-            self.trade_opps.pop(0)
+        if len(self.trade_opps) > self.slots:
+            if time.time() > self.trade_opps[0].ttl:
+                stale = self.trade_opps.pop(0)
+                print("Stale: " + stale.name)
+            else:
+                print("No slots available")
+                return
 
         self.trade_opps.append(opp)
-        index = 1
-        for opportunity in self.trade_opps:
-            print("Inv Slot: " + str(index))
-            print("Name: " + opportunity.name)
-            print("Buy: " + str(opportunity.buy))
-            print("Sell: " + str(opportunity.sell))
-            index += 1
+
+    async def update_trade_opps(self, connection):
+        try:
+            while True:
+                data = await asyncio.to_thread(connection.recv, 1024)  # Non-blocking receive
+                if data:
+                    await self.build_trade_opps(data.decode("utf-8"))
+                else:
+                    print("No more data from", self.client_address)
+                    break
+        except asyncio.CancelledError:
+            print("Task cancelled")
+        except Exception as e:
+            print(f"Error in update_trade_opps: {e}")
+        finally:
+            connection.close()
+
+
+    def get_opportunities(self):
+        print("Getting opportunities")
+        return [opp.to_dict() for opp in self.trade_opps]
+
+    def cancel_opportunity(self, number):
+        self.trade_opps.pop(number)
+
+    def get_positions(self):
+        return [position.to_dict() for position in self.positions]
 
     def function_buy(self, number):
         opp: fumble_opp = self.trade_opps.pop(number)
-        self.positions[number].setItem(opp)
+        self.positions[number].buy(opp)
         print("Buy: " + str(opp.buy))
         print("Sell: " + str(opp.sell))
         print("Name: " + opp.name)
         print(f"Buy on inv slot {number + 1}")
-        self.position_to_click(self.positions[number])
 
     def function_sell(self, number):
         print(f"Sell on slot {number + 1}")
-        self.position_to_click(number * 2 + 1)
-
+        self.positions[number].sell()
+        
     def function_collect(self, number):
         print(f"Collect on slot {number}")
         # random sell or buy
@@ -175,39 +219,12 @@ class Trader:
         # random sell or buy
         # random click pos
 
-    def process_input(self, user_input):
-        number = int(user_input[0])
-        char = user_input[1].lower()
-
-        if char == "b":
-            self.function_buy(number - 1)
-        elif char == "s":
-            self.function_sell(number - 1)
-        elif char == "c":
-            self.function_collect(number - 1)
-        elif char == "e":
-            self.function_exit(number - 1)
-        else:
-            print("Invalid character input. Please use 'b', 's', 'c', or 'e'.")
-
-    def execute_trades(self):
-        user_input = input_with_timeout("Action: ", 3).strip()
-        if (
-            len(user_input) == 2
-            and user_input[0].isdigit()
-            and int(user_input[0]) in range(1, 9)
-        ):
-            self.process_input(user_input)
-        else:
-            print(
-                "Invalid input format. Please enter a number (1-8) followed by a character (b, s, c, e)."
-            )
-        time.sleep(0.001)
-
-
-def start_server(trader: Trader, host="192.168.1.70", port=12345):
+def start_server(trader: Trader, host="", port=12345):
     # Create a TCP/IP socket
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_STREAM,
+    )
 
     # Bind the socket to the address and port
     server_address = (host, port)
@@ -217,33 +234,65 @@ def start_server(trader: Trader, host="192.168.1.70", port=12345):
     server_socket.listen(1)
     print(f"Starting server on {host}:{port}")
 
-    while True:
-        # Wait for a connection
-        print("Waiting for a connection...")
-        connection, client_address = server_socket.accept()
-        try:
-            print(f"Connection from {client_address}")
+    # Wait for a connection
+    print("Waiting for a connection...")
+    connection, client_address = server_socket.accept()
+    trader.client_address = client_address
 
-            # Receive the data in small chunks and print it
-            while True:
-                now = time.time()
-                data = connection.recv(1024)
-                if data:
-                    os.system("cls")
-                    trader.build_trade_opps(f'{data.decode("utf-8")}')
-                    trader.execute_trades()
+    asyncio.ensure_future(trader.update_trade_opps(connection))
+    # Start the uvicorn server in the background
+    asyncio.ensure_future(
+        uvicorn.run(app, host="localhost", port=12346, loop="asyncio", log_level="info")
+    )    
+    loop = asyncio.get_event_loop()
 
-                else:
-                    print("No more data from", client_address)
-                    break
-        finally:
-            # Clean up the connection
-            connection.close()
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        print("Closing server...")
+    finally:
+        # Clean up the connection
+        connection.close()
+
+
+
 
 
 def main():
     args = parse_args()
-    trader = Trader(username=args.username)
+    trader = Trader(username=args.username, slots=args.slots)
+    def get_trader():
+        return trader
+
+    @app.get("/opportunities")
+    async def get_opportunities(trader: Trader = Depends(get_trader)):
+        return  trader.get_opportunities()
+    
+    @app.post("/delete_opportunity/{number}")
+    async def cancel_opportunity(number, trader: Trader = Depends(get_trader)):
+        trader.cancel_opportunity(number)
+    
+    @app.get("/positions")
+    async def get_positions(trader: Trader = Depends(get_trader)):
+        return trader.get_positions()
+    
+    @app.post("/buy/{number}")
+    async def function_buy(number, trader: Trader = Depends(get_trader)):
+        trader.function_buy(number)
+    
+    @app.post("/sell/{number}")
+    async def function_sell(number, trader: Trader = Depends(get_trader)):
+        trader.function_sell(number)
+    
+    @app.post("/collect/{number}")
+    async def function_collect(number, trader: Trader = Depends(get_trader)):
+        trader.function_collect(number)
+    
+    @app.post("/exit/{number}")
+    async def function_exit(number, trader: Trader = Depends(get_trader)):
+        trader.function_exit(number)
+
+
     if args.clean or not os.path.exists("positions.json"):
         trader.analyze_window()
         with open("positions.json", "w") as f:
@@ -254,6 +303,11 @@ def main():
     else:
         with open("positions.json", "r") as f:
             json_positons = json.load(f)
+            if len(json_positons) != args.slots:
+                print(
+                    "Invalid number of positions in file, re-run with --clean"
+                )
+                exit()
             trader.positions = [
                 Position(
                     buy_coord=position["buy_coord"],
@@ -262,12 +316,10 @@ def main():
                 for position in json_positons
             ]
 
-    start_server(trader)
-
+    start_server(trader, args.host)
 
 if __name__ == "__main__":
     main()
-
 
 """
 Mutex lock for whether or not we're currently executing an action
