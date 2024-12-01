@@ -36,11 +36,18 @@ export default function Opportunity(props: OpportunityProps) {
 {props.opportunity.buy}
 					</span>
 				</div>
-				B: 
-				<br />
-				S: {props.opportunity.sell}
-				<br />
-				T: {props.opportunity.time}
+				<div className="flex flex-row justify-between">
+					<span>Sell</span>
+					<span>
+{props.opportunity.sell}
+					</span>
+				</div>
+				<div className="flex flex-row justify-between">
+					<span>Time</span>
+					<span>
+{props.opportunity.time}
+					</span>
+				</div>
 			</CardContent>
 			<CardFooter className="gap-1.5">
 				<Button size="icon" onClick={() => buyOpp()}>
