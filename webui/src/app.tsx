@@ -25,26 +25,18 @@ export default function App() {
 
 	return (
 		<div className="dark bg-background text-foreground w-screen h-screen p-12 gap-6 flex flex-col">
-			<Card>
-				<CardHeader>
-					<CardTitle>Opportunities</CardTitle>
-				</CardHeader>
-				<CardContent className="flex flex-row gap-3">
-					{opportunities?.map((o, i) => (
-						<Opportunity key={i} opportunity={o} index={i} />
-					))}
-				</CardContent>
-			</Card>
-			<Card>
-				<CardHeader>
-					<CardTitle>Positions</CardTitle>
-				</CardHeader>
-				<CardContent className="flex flex-row gap-3">
-					{positions?.map((p, i) => (
-						<Position key={i} position={p} index={i} />
-					))}
-				</CardContent>
-			</Card>
+			<h2>Opportunities</h2>
+			<div className="flex flex-row gap-3">
+				{opportunities?.map((o, i) => (
+					<Opportunity key={i} opportunity={o} index={i} />
+				))}
+			</div>
+			<h2>Positions</h2>
+			<div className="flex flex-row gap-3">
+				{positions?.map((p, i) => (
+					<Position key={i} position={p} index={i} />
+				))}
+			</div>
 		</div>
 	);
 }

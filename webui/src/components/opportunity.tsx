@@ -10,6 +10,7 @@ import {
 import { Cross1Icon } from "@radix-ui/react-icons";
 import { z } from "zod";
 import { opportunitySchema, useActionMutation } from "@/lib/api";
+import dayjs from "dayjs";
 
 export interface OpportunityProps {
 	index: number;
@@ -29,24 +30,28 @@ export default function Opportunity(props: OpportunityProps) {
 				<CardTitle>{props.opportunity.name}</CardTitle>
 			</CardHeader>
 			<CardContent>
-				B: {props.opportunity.buy}
+				<div className="flex flex-row justify-between">
+					<span>Buy</span>
+					<span>
+{props.opportunity.buy}
+					</span>
+				</div>
+				B: 
 				<br />
 				S: {props.opportunity.sell}
 				<br />
 				T: {props.opportunity.time}
-				<br />
-				TTL: {props.opportunity.ttl}
 			</CardContent>
 			<CardFooter className="gap-1.5">
-				<Button size="sm" onClick={() => buyOpp()}>
-					<CheckIcon />
+				<Button size="icon" onClick={() => buyOpp()}>
+					<CheckIcon className="w-5 h-5" />
 				</Button>
 				<Button
-					size="sm"
+					size="icon"
 					onClick={() => deleteOpp()}
 					variant="destructive"
 				>
-					<Cross1Icon />
+					<Cross1Icon className="w-5 h-5" />
 				</Button>
 			</CardFooter>
 		</Card>

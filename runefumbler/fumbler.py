@@ -9,9 +9,12 @@ import socket
 import time
 import tkinter as tk
 from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
 
+import threading
 import pyautogui
 import pygetwindow
+
 
 
 def parse_args():
@@ -38,10 +41,10 @@ def parse_args():
 class fumble_opp:
     def __init__(self, name, buy, sell, t):
         self.name = name
-        self.buy = buy
-        self.sell = sell
-        self.time = t
-        self.ttl = time.time() + 60
+        self.buy = int(buy)
+        self.sell = int(sell)
+        self.time = int(t)
+        self.ttl = time.time() + 10
 
     def show(self):
         print("Name: " + self.name)
@@ -110,11 +113,20 @@ class Position:
 
         }
     
-
-
 app = FastAPI()
-
-
+# Define the allowed origins
+origins = [
+    "http://localhost",
+    "http://localhost:5173",
+]
+# Add CORS middleware to the app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Origins that are allowed to make requests
+    allow_credentials=True,  # Allow cookies and authorization headers
+    allow_methods=["*"],  # HTTP methods allowed (e.g., GET, POST)
+    allow_headers=["*"],  # HTTP headers allowed
+)
 
 class Trader:
     def __init__(self, username, slots=8):
@@ -126,6 +138,7 @@ class Trader:
         self.h = -1
         self.username = username
         self.slots = slots
+        self.client_address = None
         
     def get_sell_buy_positions(self):
         time.sleep(2)
@@ -169,12 +182,14 @@ class Trader:
                 return
 
         self.trade_opps.append(opp)
+        print(f"Added trade opportunity: {opp.to_dict()}")  # Debugging log
 
     async def update_trade_opps(self, connection):
         try:
             while True:
-                data = await asyncio.to_thread(connection.recv, 1024)  # Non-blocking receive
+                data = await asyncio.to_thread(connection.recv, 1024)
                 if data:
+                    print(f"Received data: {data.decode('utf-8')}")  # Debugging log
                     await self.build_trade_opps(data.decode("utf-8"))
                 else:
                     print("No more data from", self.client_address)
@@ -192,12 +207,15 @@ class Trader:
         return [opp.to_dict() for opp in self.trade_opps]
 
     def cancel_opportunity(self, number):
+        number = int(number)
+        print(f"Canceling opportunity {number}")
         self.trade_opps.pop(number)
 
     def get_positions(self):
         return [position.to_dict() for position in self.positions]
 
     def function_buy(self, number):
+        number = int(number)
         opp: fumble_opp = self.trade_opps.pop(number)
         self.positions[number].buy(opp)
         print("Buy: " + str(opp.buy))
@@ -206,25 +224,44 @@ class Trader:
         print(f"Buy on inv slot {number + 1}")
 
     def function_sell(self, number):
+        number = int(number)
         print(f"Sell on slot {number + 1}")
         self.positions[number].sell()
         
     def function_collect(self, number):
+        number = int(number)
         print(f"Collect on slot {number}")
         # random sell or buy
         # random click pos
 
     def function_exit(self, number):
+        number = int(number)
+        # reinstatiate the position as a new position
         print(f"Exit on slot {number}")
-        # random sell or buy
-        # random click pos
+        self.positions[number] = Position(
+            self.positions[number].buy_coord,
+            self.positions[number].sell_coord,
+        )
+        
 
-def start_server(trader: Trader, host="", port=12345):
+def run_uvicorn():
+    """Run the web server in a separate thread."""
+    uvicorn.run(app, host="localhost", port=12346, log_level="info")
+
+async def start_update_trade_opps(trader, connection):
+    """Start the update_trade_opps coroutine."""
+    try:
+        await trader.update_trade_opps(connection)
+    except asyncio.CancelledError:
+        print("update_trade_opps cancelled")
+    except Exception as e:
+        print(f"Error in update_trade_opps: {e}")
+
+
+async def main_server(trader, host, port):
+    """Main function to manage server socket and async tasks."""
     # Create a TCP/IP socket
-    server_socket = socket.socket(
-        socket.AF_INET,
-        socket.SOCK_STREAM,
-    )
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     # Bind the socket to the address and port
     server_address = (host, port)
@@ -232,31 +269,29 @@ def start_server(trader: Trader, host="", port=12345):
 
     # Listen for incoming connections
     server_socket.listen(1)
+    server_socket.settimeout(1)
     print(f"Starting server on {host}:{port}")
-
-    # Wait for a connection
     print("Waiting for a connection...")
-    connection, client_address = server_socket.accept()
-    trader.client_address = client_address
 
-    asyncio.ensure_future(trader.update_trade_opps(connection))
-    # Start the uvicorn server in the background
-    asyncio.ensure_future(
-        uvicorn.run(app, host="localhost", port=12346, loop="asyncio", log_level="info")
-    )    
-    loop = asyncio.get_event_loop()
-
+    # Start Uvicorn server in a thread
+    uvicorn_thread = threading.Thread(target=run_uvicorn, daemon=True)
+    uvicorn_thread.start()
     try:
-        loop.run_forever()
+        while True:
+            try:
+                connection, client_address = server_socket.accept()
+                print(f"Connection accepted from {client_address}")
+                trader.client_address = client_address
+                # Start the update_trade_opps coroutine forever 
+                while True:
+                    await start_update_trade_opps(trader, connection)
+
+            except socket.timeout:
+                pass
     except KeyboardInterrupt:
-        print("Closing server...")
+        print("Shutting down server...")
     finally:
-        # Clean up the connection
-        connection.close()
-
-
-
-
+        print("Server socket closed.")
 
 def main():
     args = parse_args()
@@ -266,10 +301,12 @@ def main():
 
     @app.get("/opportunities")
     async def get_opportunities(trader: Trader = Depends(get_trader)):
-        return  trader.get_opportunities()
+        print(f"Trade opportunities: {trader.get_opportunities()}")  # Debugging log
+        return trader.get_opportunities()
     
     @app.post("/delete_opportunity/{number}")
     async def cancel_opportunity(number, trader: Trader = Depends(get_trader)):
+        print(f"Canceling opportunity {number}")
         trader.cancel_opportunity(number)
     
     @app.get("/positions")
@@ -316,7 +353,7 @@ def main():
                 for position in json_positons
             ]
 
-    start_server(trader, args.host)
+    asyncio.run(main_server(trader, args.host, args.port))
 
 if __name__ == "__main__":
     main()

@@ -58,6 +58,7 @@ export const positionSchema = z.object({
 
 export const positionsQuery = queryOptions({
 	queryKey: ["positions"],
+	refetchInterval: 1000,
 	queryFn: async () =>
 		request({
 			method: "GET",
@@ -72,6 +73,7 @@ export function usePositions() {
 
 export const opportunitiesQuery = queryOptions({
 	queryKey: ["opportunity"],
+	refetchInterval: 1000,
 	queryFn: async () =>
 		request({
 			method: "GET",
