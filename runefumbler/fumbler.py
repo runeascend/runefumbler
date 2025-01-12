@@ -303,11 +303,21 @@ class Trader:
     def function_buy(self, number):
         number = int(number)
         opp: fumble_opp = self.trade_opps.pop(number)
-        self.positions[number].buy(opp)
-        print("Buy: " + str(opp.buy))
-        print("Sell: " + str(opp.sell))
-        print("Name: " + opp.name)
-        print(f"Buy on inv slot {number + 1}")
+        # Find the next open position
+        position_number = -1
+        for position in self.positions:
+            if position.state == "pending":
+                position_number = self.positions.index(position)
+                break
+        if position_number == -1:
+            print("No open positions")
+            return
+        else:
+            self.positions[number].buy(opp)
+            print("Buy: " + str(opp.buy))
+            print("Sell: " + str(opp.sell))
+            print("Name: " + opp.name)
+            print(f"Buy on inv slot {number + 1}")
 
     def function_sell(self, number):
         number = int(number)
