@@ -411,6 +411,8 @@ def main():
 
     @app.post("/buy/{number}")
     async def function_buy(number, trader: Trader = Depends(get_trader)):
+        if trader.positions[int(number)].state != "pending":
+            return "Position is not in pending state"
         trader.function_buy(number)
 
     @app.post("/sell/{number}")
