@@ -1,17 +1,6 @@
-import { CheckIcon } from "lucide-react";
-import { Button } from "./ui/button";
-import {
-	Card,
-	CardContent,
-	CardFooter,
-	CardHeader,
-	CardTitle,
-} from "./ui/card";
-import { Cross1Icon } from "@radix-ui/react-icons";
 import { z } from "zod";
 import { opportunitySchema, useActionMutation } from "@/lib/api";
-import dayjs from "dayjs";
-import styles from './opportunity.module.css';
+import styles from './cards.module.css';
 
 export interface OpportunityProps {
 	index: number;
@@ -26,7 +15,7 @@ export default function Opportunity(props: OpportunityProps) {
 	);
 
 	return (
-		<div className={styles.opp}>
+		<div className={styles.card}>
 			<div className={styles.header}>
 				<div>{props.opportunity.name}</div>
 				<a className={styles.openInGrafana} target="_blank" href={`http://73.168.8.251:13300/d/b1e39934-2a88-4e7d-9336-de298905e4a5/mind-the-gap?orgId=1&refresh=5s&var-Items=${encodeURIComponent(props.opportunity.name)}`}>
