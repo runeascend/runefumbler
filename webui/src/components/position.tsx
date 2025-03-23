@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { positionSchema, useActionMutation } from "@/lib/api";
 import { z } from "zod";
 
+import styles from './position.module.css';
+
 export interface PositionProps {
 	index: number;
 	position: z.infer<typeof positionSchema>;
@@ -22,33 +24,42 @@ export default function Position(props: PositionProps) {
 	const { mutateAsync: sellPos } = useActionMutation("sell", props.index);
 	const { mutateAsync: exitPos } = useActionMutation("exit", props.index);
 
+	if (props.position.state === 'pending') {
+		return (
+			<div className={styles.position}>
+				<div className={styles.pendingText}>
+					Pending...
+				</div>
+			</div>
+		);
+	}
+
 	return (
-		<Card className="grow">
-			<CardHeader>
+		<div className={styles.position}>
+			<div className={styles.header}>
 				<CardTitle>{props.position.name}</CardTitle>
-			</CardHeader>
+				{props.position.state !== 'pending' && props.position.name !== ''&& 
+				<a className={styles.openInGrafana} target="_blank" href={`http://73.168.8.251:13300/d/b1e39934-2a88-4e7d-9336-de298905e4a5/mind-the-gap?orgId=1&refresh=5s&var-Items=${encodeURIComponent(props.position.name)}`}></a>}
+			</div>
 			<CardContent>
-				State: {props.position.state}
-				<br />
-				Buy Price: {props.position.buy_price}
-				<br />
-				Sell Price: {props.position.sell_price}
+				<span>State</span>
+				<span>{props.position.state}</span>
+				<span>Buy price</span>
+				<span className={styles.gold}>{props.position.buy_price}</span>
+				<span>Sell price</span>
+				<span className={styles.gold}>{props.position.sell_price}</span>
 			</CardContent>
-			<CardFooter className="gap-1.5">
-				<Button
-					variant="secondary"
-					size="sm"
-					onClick={() => collectPos()}
-				>
-					C
-				</Button>
-				<Button variant="secondary" size="sm" onClick={() => sellPos()}>
-					S
-				</Button>
-				<Button variant="secondary" size="sm" onClick={() => exitPos()}>
-					E
-				</Button>
-			</CardFooter>
-		</Card>
+			<div className={styles.actionRow}>
+				<button onClick={() => collectPos()}>
+					<span>Collect</span>
+				</button>
+				<button onClick={() => sellPos()}>
+					<span>Sell</span>
+				</button>
+				<button onClick={() => exitPos()}>
+					<span>Exit</span>
+				</button>
+			</div>
+		</div>
 	);
 }

@@ -4,6 +4,8 @@ import cv2 as cv
 import numpy as np
 from matplotlib import pyplot as plt
 
+LIMIT = 0
+
 
 class Position:
     def __init__(
@@ -43,8 +45,9 @@ class Position:
 
 with open("positions.json", "r") as f:
     json_positons = json.load(f)
-    positions = [
-        Position(
+    positions = []
+    for position in json_positons:
+        p = Position(
             buy_coord=position["buy_coord"],
             sell_coord=position["sell_coord"],
             set_price_coord=position["set_price_coord"],
@@ -52,8 +55,9 @@ with open("positions.json", "r") as f:
             confirm_coord=position["confirm_coord"],
             inventory_coord=position["inventory_coord"],
         )
-        for position in json_positons
-    ]
+        print(p.to_dict())
+        LIMIT += 1
+        positions.append(p)
 
     main_positions = positions
 
@@ -74,7 +78,7 @@ def match_template_update_all_confirm(img_rgb, img_gray, template, color):
     loc = np.where(res >= threshold)
     for pt in zip(*loc[::-1]):
         cv.rectangle(img_rgb, pt, (pt[0] + w, pt[1] + h), color, 2)
-        for i in range(0, 8):
+        for i in range(0, LIMIT):
             main_positions[i].confirm_coord[0] = (int)(pt[0] + (w / 2))
             main_positions[i].confirm_coord[1] = (int)(pt[1] + (h / 2))
 
@@ -86,7 +90,8 @@ def match_template_update_all_set_price(img_rgb, img_gray, template, color):
     loc = np.where(res >= threshold)
     for pt in zip(*loc[::-1]):
         cv.rectangle(img_rgb, pt, (pt[0] + w, pt[1] + h), color, 2)
-        for i in range(0, 8):
+        for i in range(0, LIMIT):
+            print(i)
             main_positions[i].set_price_coord[0] = (int)(pt[0] + (w / 2))
             main_positions[i].set_price_coord[1] = (int)(pt[1] + (h / 2))
 
@@ -98,7 +103,7 @@ def match_template_update_all_quantity(img_rgb, img_gray, template, color):
     loc = np.where(res >= threshold)
     for pt in zip(*loc[::-1]):
         cv.rectangle(img_rgb, pt, (pt[0] + w, pt[1] + h), color, 2)
-        for i in range(0, 8):
+        for i in range(0, LIMIT):
             main_positions[i].set_quantity_coord[0] = (int)(pt[0] + (w / 2))
             main_positions[i].set_quantity_coord[1] = (int)(pt[1] + (h / 2))
 
@@ -110,6 +115,9 @@ def match_buy_template(img_rgb, img_gray, template, color):
     loc = np.where(res >= threshold)
     index = 0
     for pt in zip(*loc[::-1]):
+        if index >= LIMIT:
+            break
+        print(index)
         cv.rectangle(img_rgb, pt, (pt[0] + w, pt[1] + h), color, 2)
         main_positions[index].buy_coord[0] = (int)(pt[0] + (w / 2))
         main_positions[index].buy_coord[1] = (int)(pt[1] + (h / 2))
@@ -123,6 +131,9 @@ def match_sell_template(img_rgb, img_gray, template, color):
     loc = np.where(res >= threshold)
     index = 0
     for pt in zip(*loc[::-1]):
+        if index >= LIMIT:
+            break
+
         cv.rectangle(img_rgb, pt, (pt[0] + w, pt[1] + h), color, 2)
         main_positions[index].sell_coord[0] = (int)(pt[0] + (w / 2))
         main_positions[index].sell_coord[1] = (int)(pt[1] + (h / 2))
@@ -191,9 +202,13 @@ def build_ge_offer():
     cv.imwrite("identify_offer.png", img_rgb)
 
 
-build_main_window()
-build_ge_offer()
+def build_runescape_trader():
+    build_main_window()
+    build_ge_offer()
+    with open("updated_positions.json", "w") as f:
+        json_positions = [position.to_dict() for position in main_positions]
+        json.dump(json_positions, f)
 
-with open("updated_positions.json", "w") as f:
-    json_positions = [position.to_dict() for position in main_positions]
-    json.dump(json_positions, f)
+
+if __name__ == "__main__":
+    build_runescape_trader()

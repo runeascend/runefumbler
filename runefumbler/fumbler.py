@@ -71,6 +71,7 @@ class Position:
         set_quantity_coord,
         confirm_coord,
         inventory_coord,
+        collect_coord,
         parent_window,
     ):
         self.buy_coord = buy_coord
@@ -79,6 +80,7 @@ class Position:
         self.set_quantity_coord = set_quantity_coord
         self.confirm_coord = confirm_coord
         self.inventory_coord = inventory_coord
+        self.collect_coord = collect_coord
         self.state = "pending"
         self.name = ""
         self.buy_price = 0
@@ -95,18 +97,23 @@ class Position:
         self.trade(x, y, self.buy_price)
 
     def sell(self):
-        if self.state != "buying":
+        if self.state != "collecting":
             raise Exception("Can't sell if not in buying state")
         self.state = "selling"
-        x = self.sel_coord[0]
-        y = self.sel_coord[1]
+        x = self.sell_coord[0]
+        y = self.sell_coord[1]
         self.trade(x, y, self.sell_price)
 
     def collect(self):
         # how do we want to do this
-        print("Hello")
+        self.state = "collecting"
+        x = self.collect_coord[0]
+        y = self.collect_coord[1]
+        self.move_to_x_y(x, y, 1)
+        pyautogui.click()
 
     def to_dict(self):
+        # If you add a field - Make sure to add it here
         return {
             "buy_coord": self.buy_coord,
             "sell_coord": self.sell_coord,
@@ -114,6 +121,7 @@ class Position:
             "set_quantity_coord": self.set_quantity_coord,
             "confirm_coord": self.confirm_coord,
             "inventory_coord": self.inventory_coord,
+            "collect_coord": self.collect_coord,
             "state": self.state,
             "name": self.name,
             "buy_price": self.buy_price,
@@ -154,7 +162,7 @@ class Position:
             x=random.randint(x - adjustment, x + adjustment),
             y=random.randint(y - adjustment, y + adjustment),
             duration=random.uniform(0.5, 1),
-            tween=pyautogui.easeInOutSine,
+            tween=pyautogui.easeInOutElastic,
         )
 
 
@@ -188,7 +196,7 @@ class Trader:
         self.client_address = None
 
     def get_sell_buy_positions(
-        self, set_price, set_quantity, confirm, inventory
+        self, set_price, set_quantity, confirm, inventory, collect
     ):
         time.sleep(2)
         buy = pyautogui.position()
@@ -205,6 +213,7 @@ class Trader:
                 set_quantity,
                 confirm,
                 inventory,
+                collect,
                 self.window,
             )
         )
@@ -240,6 +249,12 @@ class Trader:
         inventory = pyautogui.position()
         print(inventory)
         print("Please go back to the main trading screen")
+        time.sleep(5)
+        print(
+            "Please move your mouse to the collect position - 3 pixels above the top right edge of slot 4"
+        )
+        time.sleep(2)
+        collect = pyautogui.position()
         time.sleep(2)
         for i in range(0, self.slots):
             print(
@@ -250,24 +265,36 @@ class Trader:
                 set_quantity=set_quantity,
                 confirm=confirm,
                 inventory=inventory,
+                collect=collect,
             )
 
         self.window.activate()
         return
 
     async def build_trade_opps(self, savant_input):
-        split_string = savant_input.split(":")
-        split_string = [s.strip() for s in split_string]
-        opp = fumble_opp(
-            split_string[0], split_string[1], split_string[2], split_string[3]
-        )
-        if len(self.trade_opps) > self.slots:
-            if time.time() > self.trade_opps[0].ttl:
-                stale = self.trade_opps.pop(0)
-                print("Stale: " + stale.name)
-            else:
-                print("No slots available")
-                return
+        # Message is in the fomrmat of (name:buy:sell:time|)
+        ops = savant_input.split("|")
+        for s_i in ops:
+            if not s_i:
+                continue
+            split_string = s_i.split(":")
+            split_string = [s.strip() for s in split_string]
+            if len(split_string) != 4:
+                print(f"Invalid input: {split_string}")
+                continue
+            opp = fumble_opp(
+                split_string[0],
+                split_string[1],
+                split_string[2],
+                split_string[3],
+            )
+            if len(self.trade_opps) > self.slots:
+                if time.time() > self.trade_opps[0].ttl:
+                    stale = self.trade_opps.pop(0)
+                    print("Stale: " + stale.name)
+                else:
+                    print("No slots available")
+                    return
 
         self.trade_opps.append(opp)
         print(f"Added trade opportunity: {opp.to_dict()}")  # Debugging log
@@ -288,6 +315,7 @@ class Trader:
             print("Task cancelled")
         except Exception as e:
             print(f"Error in update_trade_opps: {e}")
+            exit()
         finally:
             connection.close()
 
@@ -303,24 +331,13 @@ class Trader:
     def get_positions(self):
         return [position.to_dict() for position in self.positions]
 
-    def function_buy(self, number):
-        number = int(number)
-        opp: fumble_opp = self.trade_opps.pop(number)
-        # Find the next open position
-        position_number = -1
-        for position in self.positions:
-            if position.state == "pending":
-                position_number = self.positions.index(position)
-                break
-        if position_number == -1:
-            print("No open positions")
-            return
-        else:
-            self.positions[number].buy(opp)
-            print("Buy: " + str(opp.buy))
-            print("Sell: " + str(opp.sell))
-            print("Name: " + opp.name)
-            print(f"Buy on inv slot {number + 1}")
+    def function_buy(self, position_number, opp_number):
+        opp: fumble_opp = self.trade_opps.pop(opp_number)
+        self.positions[position_number].buy(opp)
+        print("Buy: " + str(opp.buy))
+        print("Sell: " + str(opp.sell))
+        print("Name: " + opp.name)
+        print(f"Buy on inv slot {position_number + 1}")
 
     def function_sell(self, number):
         number = int(number)
@@ -330,6 +347,8 @@ class Trader:
     def function_collect(self, number):
         number = int(number)
         print(f"Collect on slot {number}")
+        self.positions[number].collect()
+
         # random sell or buy
         # random click pos
 
@@ -344,6 +363,7 @@ class Trader:
             self.positions[number].set_quantity_coord,
             self.positions[number].confirm_coord,
             self.positions[number].inventory_coord,
+            self.positions[number].collect_coord,
             parent_window=self.window,
         )
 
@@ -424,9 +444,18 @@ def main():
 
     @app.post("/buy/{number}")
     async def function_buy(number, trader: Trader = Depends(get_trader)):
-        if trader.positions[int(number)].state != "pending":
+        # Find an open position if we have one other return Position is not in pending state
+        number = int(number)
+        idx = 0
+        position_number = None
+        for position in trader.positions:
+            if position.state == "pending":
+                position_number = idx
+                break
+            idx += 1
+        if position_number is None:
             return "Position is not in pending state"
-        trader.function_buy(number)
+        trader.function_buy(opp_number=number, position_number=position_number)
 
     @app.post("/sell/{number}")
     async def function_sell(number, trader: Trader = Depends(get_trader)):
@@ -441,6 +470,7 @@ def main():
         trader.function_exit(number)
 
     if args.clean or not os.path.exists("positions.json"):
+        # TODO: Move to using opencv_positions.py @Connor
         trader.analyze_window()
         with open("positions.json", "w") as f:
             json_positions = [
@@ -463,6 +493,7 @@ def main():
                     set_price_coord=position["set_price_coord"],
                     set_quantity_coord=position["set_quantity_coord"],
                     confirm_coord=position["confirm_coord"],
+                    collect_coord=position["collect_coord"],
                     inventory_coord=position["inventory_coord"],
                     parent_window=trader.window,
                 )
