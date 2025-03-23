@@ -176,6 +176,7 @@ app.add_middleware(
 
 class Trader:
     def __init__(self, username, slots=8):
+        self.window = None
         self.positions: list[Position] = []
         self.trade_opps = []
         self.x = -1
@@ -219,6 +220,8 @@ class Trader:
 
     def analyze_window(self):
         self.get_runescape_window()
+        if self.window is None:
+            raise Exception("Window not found - Run runescape Nerd")
         self.window.activate()
         print("Please move your mouse to the set price position")
         time.sleep(5)
