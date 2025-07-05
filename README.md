@@ -10,6 +10,28 @@ https://pypi.org/project/runefumbler/
 
 This project uses a Windows batch script, `dev.bat`, to simplify the management of the Python development environment. The script handles virtual environment creation, dependency management, formatting, and testing.
 
+## Using the app
+
+In one window spin up the UI:
+`cd webbui && npm run dev`
+
+In another start fumbler:
+`.venv\Scripts\activate`
+
+Pictures you need to take:
+
+```
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a----         3/23/2025   2:00 PM           4341 buy_slot.png
+-a----         3/23/2025   2:03 PM           2047 confirm.png
+-a----         3/23/2025   1:59 PM        4948906 full_main_window.png
+-a----         3/23/2025   2:02 PM        4742480 full_offer.png
+-a----         3/23/2025   2:01 PM          14114 ge_slot.png
+-a----         3/23/2025   2:04 PM           1305 quantity.png
+-a----         3/23/2025   2:01 PM           4256 sell_slot.png
+-a----         3/23/2025   2:02 PM            848 set_price.png
+```
 
 ### Prerequisites
 
@@ -91,3 +113,4 @@ This command generates both terminal and HTML coverage reports, with coverage in
 | `dep-check`     | Check for dependency issues using `deptry`                               |
 | `update-dev`    | Update all project dependencies to their latest compatible versions      |
 | `test`          | Run the test suite with `pytest` and generate coverage reports           |
+

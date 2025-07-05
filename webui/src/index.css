@@ -1,0 +1,23 @@
+:root {
+	--sheen: linear-gradient(oklch(1 0 0 / 25%), oklch(1 0 0 / 12.5%), oklch(1 0 0 / 10%), oklch(1 0 0 / 0%));
+}
+
+*, ::before, *::after {
+	padding: 0;
+	margin: 0;
+	border: none;
+	outline: none;
+	appearance: none;
+	font-size: 1rem;
+	color: inherit;
+	/* font-family: inherit; */
+	background: none;
+	box-sizing: border-box;
+}
+
+body {
+	background-color: oklch(0.175 0 0);
+	padding: 2rem;
+	color: white;
+	font-family: 'Wanted Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+}

@@ -1,31 +1,21 @@
 import argparse
+import asyncio
 import json
 import os
 import random
-import signal
 import socket
+import threading
 import time
+import tkinter as tk
+from enum import StrEnum
 
 import pyautogui
 import pygetwindow
+import uvicorn
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-
-def alarm_handler(signum, frame):
-    raise TimeoutError
-
-
-def input_with_timeout(prompt, timeout):
-    # set signal handler
-    signal.signal(signal.SIG_DFL, alarm_handler)
-    signal.alarm(timeout)  # produce SIGALRM in `timeout` seconds
-
-    try:
-        return input(prompt)
-    except TimeoutError:
-        print("Continuing, no user input")
-        return ""
-    finally:
-        signal.alarm(0)  # cance
+DEFAULT_QUANTITY = "1000"
 
 
 def parse_args():
@@ -43,15 +33,22 @@ def parse_args():
     parser.add_argument(
         "--clean", action="store_true", help="Clear the screen postion data"
     )
+    parser.add_argument(
+        "--slots", type=int, default=8, help="Number of inventory slots"
+    )
+    parser.add_argument(
+        "--auto", action="store_true", help="Let the trader function on its own"
+    )
     return parser.parse_args()
 
 
 class fumble_opp:
-    def __init__(self, name, buy, sell, time):
+    def __init__(self, name, buy, sell, t):
         self.name = name
-        self.buy = buy
-        self.sell = sell
-        self.time = time
+        self.buy = int(buy)
+        self.sell = int(sell)
+        self.time = int(t)
+        self.ttl = time.time() + 10
 
     def show(self):
         print("Name: " + self.name)
@@ -59,153 +56,385 @@ class fumble_opp:
         print("Sell At: " + self.sell)
         print("Time In Pos: " + self.time)
 
-    def to_json(self):
-        return json.dumps(
-            {
-                "name": self.name,
-                "buy": self.buy,
-                "sell": self.sell,
-                "time": self.time,
-            }
-        )
-
-
-class Position:
-    def __init__(self, buy_coord, sell_coord):
-        self.buy_coord = buy_coord
-        self.sell_coord = sell_coord
-
-    def setItem(self, opp: fumble_opp):
-        self.name = opp.name
-        self.buy_price = opp.buy
-        self.sell_price = opp.sell
-
     def to_dict(self):
         return {
-            "buy_coord": self.buy_coord,
-            "sell_coord": self.sell_coord,
+            "name": self.name,
+            "buy": self.buy,
+            "sell": self.sell,
+            "time": self.time,
+            "ttl": self.ttl,
         }
 
 
-class Trader:
+class PositionStates(StrEnum):
+    PENDING = "pending"
+    BUYING = "buying"
+    COLLECTING = "collecting"
+    SELLING = "selling"
 
-    def __init__(self, username):
+
+class Position:
+    def __init__(
+        self,
+        buy_coord,
+        sell_coord,
+        set_price_coord,
+        set_quantity_coord,
+        confirm_coord,
+        inventory_coord,
+        collect_coord,
+        parent_window,
+    ):
+        self.buy_coord = buy_coord
+        self.sell_coord = sell_coord
+        self.set_price_coord = set_price_coord
+        self.set_quantity_coord = set_quantity_coord
+        self.confirm_coord = confirm_coord
+        self.inventory_coord = inventory_coord
+        self.collect_coord = collect_coord
+        self.state = PositionStates.PENDING
+        self.name = ""
+        self.buy_price = 0
+        self.sell_price = 0
+        self.parent_window = parent_window
+
+    def buy(self, opp: fumble_opp):
+        self.name = opp.name
+        self.buy_price = opp.buy
+        self.sell_price = opp.sell
+        self.state = PositionStates.BUYING
+        x = self.buy_coord[0]
+        y = self.buy_coord[1]
+        self.trade(x, y, self.buy_price)
+
+    def sell(self):
+        if self.state != PositionStates.COLLECTING:
+            raise Exception("Can't sell if not in collecting state")
+        self.state = PositionStates.SELLING
+        x = self.sell_coord[0]
+        y = self.sell_coord[1]
+        self.trade(x, y, self.sell_price)
+
+    def collect(self):
+        # how do we want to do this
+        self.state = PositionStates.COLLECTING
+        x = self.collect_coord[0]
+        y = self.collect_coord[1]
+        self.move_to_x_y(x, y, 1)
+        pyautogui.click()
+
+    def to_dict(self):
+        # If you add a field - Make sure to add it here
+        return {
+            "buy_coord": self.buy_coord,
+            "sell_coord": self.sell_coord,
+            "set_price_coord": self.set_price_coord,
+            "set_quantity_coord": self.set_quantity_coord,
+            "confirm_coord": self.confirm_coord,
+            "inventory_coord": self.inventory_coord,
+            "collect_coord": self.collect_coord,
+            "state": self.state,
+            "name": self.name,
+            "buy_price": self.buy_price,
+            "sell_price": self.sell_price,
+        }
+
+    def trade(self, x: int, y: int, price: int):
+        self.move_to_x_y(x, y, 10)
+        pyautogui.click()
+        # activate window and type name
+        self.price_and_enter(self.name)
+        # Go to set price
+        self.move_to_x_y(self.set_price_coord[0], self.set_price_coord[1], 3)
+        pyautogui.click()
+        self.price_and_enter(str(price))
+        # Go to set quantity
+        self.move_to_x_y(
+            self.set_quantity_coord[0], self.set_quantity_coord[1], 3
+        )
+        pyautogui.click()
+        self.price_and_enter(DEFAULT_QUANTITY)
+        # Go to confirm
+        self.move_to_x_y(self.confirm_coord[0], self.confirm_coord[1], 5)
+        pyautogui.click()
+        self.parent_window.activate()
+        time.sleep(random.uniform(0.25, 1))
+
+    def price_and_enter(self, input: str):
+        self.parent_window.activate()
+        time.sleep(random.uniform(0.5, 1))
+        pyautogui.typewrite(input, interval=random.uniform(0.2, 0.3))
+        time.sleep(random.uniform(0.5, 1))
+        pyautogui.typewrite(["enter"])
+        time.sleep(random.uniform(0.5, 1))
+
+    def move_to_x_y(self, x: int, y: int, adjustment: int):
+        pyautogui.moveTo(
+            x=random.randint(x - adjustment, x + adjustment),
+            y=random.randint(y - adjustment, y + adjustment),
+            duration=random.uniform(0.5, 1),
+            tween=pyautogui.easeInOutElastic,
+        )
+
+
+app = FastAPI()
+# Define the allowed origins
+origins = [
+    "http://localhost",
+    "http://localhost:5173",
+]
+# Add CORS middleware to the app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Origins that are allowed to make requests
+    allow_credentials=True,  # Allow cookies and authorization headers
+    allow_methods=["*"],  # HTTP methods allowed (e.g., GET, POST)
+    allow_headers=["*"],  # HTTP headers allowed
+)
+
+
+class Trader:
+    def __init__(self, username, slots=8, auto=False):
+        self.window = None
         self.positions: list[Position] = []
-        self.trade_opps = []
+        self.trade_opps = list[fumble_opp] = []
         self.x = -1
         self.y = -1
         self.w = -1
         self.h = -1
         self.username = username
+        self.slots = slots
+        self.client_address = None
+        self.auto = auto
+        self.trade_mutex = threading.Lock()
 
-    def get_sell_buy_positions(self):
+    def get_sell_buy_positions(
+        self, set_price, set_quantity, confirm, inventory, collect
+    ):
         time.sleep(2)
         buy = pyautogui.position()
         print(buy)
+        print("Please move your mouse to the sell position")
         time.sleep(2)
         sell = pyautogui.position()
         print(sell)
-        self.positions.append(Position(buy, sell))
+        self.positions.append(
+            Position(
+                buy,
+                sell,
+                set_price,
+                set_quantity,
+                confirm,
+                inventory,
+                collect,
+                self.window,
+            )
+        )
 
-    def analyze_window(self):
+    def get_runescape_window(self):
         # Since it puts your username there might as well search for it.
+        # Get set price coord
         windows: list[pygetwindow.Win32Window] = pygetwindow.getAllWindows()
         for window in windows:
             if self.username in window.title:
                 self.window = window
                 break
 
-        for i in range(0, 8):
-            self.get_sell_buy_positions()
+    def analyze_window(self):
+        self.get_runescape_window()
+        if self.window is None:
+            raise Exception("Window not found - Run runescape Nerd")
+        self.window.activate()
+        print("Please move your mouse to the set price position")
+        time.sleep(5)
+        set_price = pyautogui.position()
+        print(set_price)
+        print("Please move your mouse to set quantity position")
+        time.sleep(2)
+        set_quantity = pyautogui.position()
+        print(set_quantity)
+        print("Please move your mouse to the confirm position")
+        time.sleep(2)
+        confirm = pyautogui.position()
+        print(confirm)
+        print("Please move your mouse to the inventory position")
+        time.sleep(2)
+        inventory = pyautogui.position()
+        print(inventory)
+        print("Please go back to the main trading screen")
+        time.sleep(5)
+        print(
+            "Please move your mouse to the collect position - 3 pixels above the top right edge of slot 4"
+        )
+        time.sleep(2)
+        collect = pyautogui.position()
+        time.sleep(2)
+        for i in range(0, self.slots):
+            print(
+                f"Please move your mouse to the buy position for slot {i + 1}"
+            )
+            self.get_sell_buy_positions(
+                set_price=set_price,
+                set_quantity=set_quantity,
+                confirm=confirm,
+                inventory=inventory,
+                collect=collect,
+            )
 
         self.window.activate()
         return
 
-    def position_to_click(self, position: Position):
-        x = position.buy_coord[0]
-        y = position.buy_coord[1]
-        pyautogui.moveTo(
-            random.randint(x - 10, x + 10),
-            random.randint(y - 10, y + 10),
-            random.uniform(0.1, 1),
-            pyautogui.easeInOutSine,
-        )
-        pyautogui.click()
-        pyautogui.typewrite(position.name)
-
-    def build_trade_opps(self, savant_input):
-        split_string = savant_input.split(":")
-        split_string = [s.strip() for s in split_string]
-        print(split_string)
-        opp = fumble_opp(
-            split_string[0], split_string[1], split_string[2], split_string[3]
-        )
-        if len(self.trade_opps) > 8:
-            self.trade_opps.pop(0)
+    async def build_trade_opps(self, savant_input):
+        # Message is in the fomrmat of (name:buy:sell:time|)
+        ops = savant_input.split("|")
+        for s_i in ops:
+            if not s_i:
+                continue
+            split_string = s_i.split(":")
+            split_string = [s.strip() for s in split_string]
+            if len(split_string) != 4:
+                print(f"Invalid input: {split_string}")
+                continue
+            opp = fumble_opp(
+                split_string[0],
+                split_string[1],
+                split_string[2],
+                split_string[3],
+            )
+            if len(self.trade_opps) > self.slots:
+                if time.time() > self.trade_opps[0].ttl:
+                    stale = self.trade_opps.pop(0)
+                    print("Stale: " + stale.name)
+                else:
+                    print("No slots available")
+                    return
 
         self.trade_opps.append(opp)
-        index = 1
-        for opportunity in self.trade_opps:
-            print("Inv Slot: " + str(index))
-            print("Name: " + opportunity.name)
-            print("Buy: " + str(opportunity.buy))
-            print("Sell: " + str(opportunity.sell))
-            index += 1
+        print(f"Added trade opportunity: {opp.to_dict()}")  # Debugging log
 
-    def function_buy(self, number):
-        opp: fumble_opp = self.trade_opps.pop(number)
-        self.positions[number].setItem(opp)
+    async def update_trade_opps(self, connection):
+        try:
+            while True:
+                data = await asyncio.to_thread(connection.recv, 1024)
+                if data:
+                    print(
+                        f"Received data: {data.decode('utf-8')}"
+                    )  # Debugging log
+                    await self.build_trade_opps(data.decode("utf-8"))
+                else:
+                    print("No more data from", self.client_address)
+                    break
+        except asyncio.CancelledError:
+            print("Task cancelled")
+        except Exception as e:
+            print(f"Error in update_trade_opps: {e}")
+            exit()
+        finally:
+            connection.close()
+
+    def get_opportunities(self):
+        print("Getting opportunities")
+        return [opp.to_dict() for opp in self.trade_opps]
+
+    def cancel_opportunity(self, number):
+        number = int(number)
+        print(f"Canceling opportunity {number}")
+        self.trade_opps.pop(number)
+
+    def get_positions(self):
+        return [position.to_dict() for position in self.positions]
+
+    def function_buy(self, position_number, opp_number):
+        self.trade_mutex.acquire()
+        opp: fumble_opp = self.trade_opps.pop(opp_number)
+        self.positions[position_number].buy(opp)
+        self.trade_mutex.release()
         print("Buy: " + str(opp.buy))
         print("Sell: " + str(opp.sell))
         print("Name: " + opp.name)
-        print(f"Buy on inv slot {number + 1}")
-        self.position_to_click(self.positions[number])
+        print(f"Buy on inv slot {position_number + 1}")
 
     def function_sell(self, number):
+        number = int(number)
         print(f"Sell on slot {number + 1}")
-        self.position_to_click(number * 2 + 1)
+        self.trade_mutex.acquire()
+        self.positions[number].sell()
+        self.trade_mutex.release()
 
     def function_collect(self, number):
+        number = int(number)
         print(f"Collect on slot {number}")
-        # random sell or buy
-        # random click pos
+        self.trade_mutex.acquire()
+        self.positions[number].collect()
+        self.trade_mutex.release()
+
+    def instatiate_pos(self, number):
+        self.positions[number] = Position(
+            self.positions[number].buy_coord,
+            self.positions[number].sell_coord,
+            self.positions[number].set_price_coord,
+            self.positions[number].set_quantity_coord,
+            self.positions[number].confirm_coord,
+            self.positions[number].inventory_coord,
+            self.positions[number].collect_coord,
+            parent_window=self.window,
+        )
 
     def function_exit(self, number):
+        number = int(number)
+        # reinstatiate the position as a new position
         print(f"Exit on slot {number}")
-        # random sell or buy
-        # random click pos
+        self.instatiate_pos(number)
 
-    def process_input(self, user_input):
-        number = int(user_input[0])
-        char = user_input[1].lower()
-
-        if char == "b":
-            self.function_buy(number - 1)
-        elif char == "s":
-            self.function_sell(number - 1)
-        elif char == "c":
-            self.function_collect(number - 1)
-        elif char == "e":
-            self.function_exit(number - 1)
-        else:
-            print("Invalid character input. Please use 'b', 's', 'c', or 'e'.")
-
-    def execute_trades(self):
-        user_input = input_with_timeout("Action: ", 3).strip()
-        if (
-            len(user_input) == 2
-            and user_input[0].isdigit()
-            and int(user_input[0]) in range(1, 9)
-        ):
-            self.process_input(user_input)
-        else:
-            print(
-                "Invalid input format. Please enter a number (1-8) followed by a character (b, s, c, e)."
-            )
-        time.sleep(0.001)
+    def auto_trade(self):
+        pos: Position
+        opp: fumble_opp
+        for slot, pos in enumerate(self.positions):
+            match pos.state:
+                case PositionStates.BUYING:
+                    # Need to see if our buy has finished (Requires CV)
+                    buy_finished = True
+                    if buy_finished:
+                        self.function_collect(slot)
+                        self.function_sell(slot)
+                case PositionStates.SELLING:
+                    # Need to use CV to see if its finished
+                    sell_finished = True
+                    if sell_finished:
+                        # Get that money money
+                        self.function_collect(slot)
+                        # Clear pos now:
+                        self.instatiate_pos(slot)
+                case PositionStates.PENDING:
+                    # Get the opp on the back of the queue
+                    number_of_opps = len(self.trade_opps)
+                    # TODO: We could make this smarter
+                    self.function_buy(slot, number_of_opps - 1)
 
 
-def start_server(trader: Trader, host="192.168.1.70", port=12345):
+def run_autotrader(trader):
+    while True:
+        trader.auto_trade()
+        time.sleep(1)
+
+
+def run_uvicorn():
+    """Run the web server in a separate thread."""
+    uvicorn.run(app, host="localhost", port=12346, log_level="info")
+
+
+async def start_update_trade_opps(trader, connection):
+    """Start the update_trade_opps coroutine."""
+    try:
+        await trader.update_trade_opps(connection)
+    except asyncio.CancelledError:
+        print("update_trade_opps cancelled")
+    except Exception as e:
+        print(f"Error in update_trade_opps: {e}")
+
+
+async def main_server(trader, host, port):
+    """Main function to manage server socket and async tasks."""
     # Create a TCP/IP socket
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -215,36 +444,88 @@ def start_server(trader: Trader, host="192.168.1.70", port=12345):
 
     # Listen for incoming connections
     server_socket.listen(1)
+    server_socket.settimeout(1)
     print(f"Starting server on {host}:{port}")
+    print("Waiting for a connection...")
 
-    while True:
-        # Wait for a connection
-        print("Waiting for a connection...")
-        connection, client_address = server_socket.accept()
-        try:
-            print(f"Connection from {client_address}")
+    # Start Uvicorn server in a thread
+    uvicorn_thread = threading.Thread(target=run_uvicorn, daemon=True)
+    uvicorn_thread.start()
 
-            # Receive the data in small chunks and print it
-            while True:
-                now = time.time()
-                data = connection.recv(1024)
-                if data:
-                    os.system("cls")
-                    trader.build_trade_opps(f'{data.decode("utf-8")}')
-                    trader.execute_trades()
+    # Start autotrade if set
+    if trader.auto:
+        trading_thread = threading.Thread(target=run_autotrader)
+        trading_thread.start()
+    try:
+        while True:
+            try:
+                connection, client_address = server_socket.accept()
+                print(f"Connection accepted from {client_address}")
+                trader.client_address = client_address
+                # Start the update_trade_opps coroutine forever
+                while True:
+                    await start_update_trade_opps(trader, connection)
 
-                else:
-                    print("No more data from", client_address)
-                    break
-        finally:
-            # Clean up the connection
-            connection.close()
+            except socket.timeout:
+                pass
+    except KeyboardInterrupt:
+        print("Shutting down server...")
+    finally:
+        print("Server socket closed.")
 
 
 def main():
     args = parse_args()
-    trader = Trader(username=args.username)
+    trader = Trader(username=args.username, slots=args.slots, auto=args.auto)
+
+    def get_trader():
+        return trader
+
+    @app.get("/opportunities")
+    async def get_opportunities(trader: Trader = Depends(get_trader)):
+        print(
+            f"Trade opportunities: {trader.get_opportunities()}"
+        )  # Debugging log
+        return trader.get_opportunities()
+
+    @app.post("/delete_opportunity/{number}")
+    async def cancel_opportunity(number, trader: Trader = Depends(get_trader)):
+        print(f"Canceling opportunity {number}")
+        trader.cancel_opportunity(number)
+
+    @app.get("/positions")
+    async def get_positions(trader: Trader = Depends(get_trader)):
+        return trader.get_positions()
+
+    @app.post("/buy/{number}")
+    async def function_buy(number, trader: Trader = Depends(get_trader)):
+        # Find an open position if we have one other return Position is not in pending state
+        number = int(number)
+        idx = 0
+        position_number = None
+        for position in trader.positions:
+            if position.state == "pending":
+                position_number = idx
+                break
+            idx += 1
+        if position_number is None:
+            return "Position is not in pending state"
+        trader.function_buy(opp_number=number, position_number=position_number)
+
+    @app.post("/sell/{number}")
+    async def function_sell(number, trader: Trader = Depends(get_trader)):
+        trader.function_sell(number)
+
+    @app.post("/collect/{number}")
+    async def function_collect(number, trader: Trader = Depends(get_trader)):
+        trader.function_collect(number)
+
+    @app.post("/exit/{number}")
+    async def function_exit(number, trader: Trader = Depends(get_trader)):
+        trader.function_exit(number)
+
     if args.clean or not os.path.exists("positions.json"):
+        # TODO: Move to using opencv_positions.py @Connor
         trader.analyze_window()
         with open("positions.json", "w") as f:
             json_positions = [
@@ -254,42 +535,28 @@ def main():
     else:
         with open("positions.json", "r") as f:
             json_positons = json.load(f)
+            if len(json_positons) != args.slots:
+                print(
+                    "Invalid number of positions in file, re-run with --clean"
+                )
+                exit()
+            trader.get_runescape_window()
             trader.positions = [
                 Position(
                     buy_coord=position["buy_coord"],
                     sell_coord=position["sell_coord"],
+                    set_price_coord=position["set_price_coord"],
+                    set_quantity_coord=position["set_quantity_coord"],
+                    confirm_coord=position["confirm_coord"],
+                    collect_coord=position["collect_coord"],
+                    inventory_coord=position["inventory_coord"],
+                    parent_window=trader.window,
                 )
                 for position in json_positons
             ]
 
-    start_server(trader)
+    asyncio.run(main_server(trader, args.host, args.port))
 
 
 if __name__ == "__main__":
     main()
-
-
-"""
-Mutex lock for whether or not we're currently executing an action
-UI:
-1. Store information on the positions of the RS screen
-2. "queue of active trade"
-3. Enter letter combo "1b" = enter position for queue place 1, lock to queue "1" for that inventory slot
-4. Execute in RS
-5. Return control immediately back to the terminal for the python interface
-6. Enter or exit trades "2b" is another enter, "1b" is exit and collect all regardless of fill
-7. Repeat and make tons of fake money
-
-
-Two queues, one for active trades, one for most recent potential trades from server. As soon as a slot is filled and exited
-we repopulate that position from the most active list. 
-"""
-
-"""
-Window Sizes:
-480 x 240 - main
-115 x 105 - slot
-115 x 105 - slot
-
-
-"""
