@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 import tkinter as tk
+from enum import StrEnum
 
 import pyautogui
 import pygetwindow
@@ -35,6 +36,9 @@ def parse_args():
     parser.add_argument(
         "--slots", type=int, default=8, help="Number of inventory slots"
     )
+    parser.add_argument(
+        "--auto", action="store_true", help="Let the trader function on its own"
+    )
     return parser.parse_args()
 
 
@@ -62,6 +66,13 @@ class fumble_opp:
         }
 
 
+class PositionStates(StrEnum):
+    PENDING = "pending"
+    BUYING = "buying"
+    COLLECTING = "collecting"
+    SELLING = "selling"
+
+
 class Position:
     def __init__(
         self,
@@ -81,7 +92,7 @@ class Position:
         self.confirm_coord = confirm_coord
         self.inventory_coord = inventory_coord
         self.collect_coord = collect_coord
-        self.state = "pending"
+        self.state = PositionStates.PENDING
         self.name = ""
         self.buy_price = 0
         self.sell_price = 0
@@ -91,22 +102,22 @@ class Position:
         self.name = opp.name
         self.buy_price = opp.buy
         self.sell_price = opp.sell
-        self.state = "buying"
+        self.state = PositionStates.BUYING
         x = self.buy_coord[0]
         y = self.buy_coord[1]
         self.trade(x, y, self.buy_price)
 
     def sell(self):
-        if self.state != "collecting":
-            raise Exception("Can't sell if not in buying state")
-        self.state = "selling"
+        if self.state != PositionStates.COLLECTING:
+            raise Exception("Can't sell if not in collecting state")
+        self.state = PositionStates.SELLING
         x = self.sell_coord[0]
         y = self.sell_coord[1]
         self.trade(x, y, self.sell_price)
 
     def collect(self):
         # how do we want to do this
-        self.state = "collecting"
+        self.state = PositionStates.COLLECTING
         x = self.collect_coord[0]
         y = self.collect_coord[1]
         self.move_to_x_y(x, y, 1)
@@ -183,10 +194,10 @@ app.add_middleware(
 
 
 class Trader:
-    def __init__(self, username, slots=8):
+    def __init__(self, username, slots=8, auto=False):
         self.window = None
         self.positions: list[Position] = []
-        self.trade_opps = []
+        self.trade_opps = list[fumble_opp] = []
         self.x = -1
         self.y = -1
         self.w = -1
@@ -194,6 +205,8 @@ class Trader:
         self.username = username
         self.slots = slots
         self.client_address = None
+        self.auto = auto
+        self.trade_mutex = threading.Lock()
 
     def get_sell_buy_positions(
         self, set_price, set_quantity, confirm, inventory, collect
@@ -332,8 +345,10 @@ class Trader:
         return [position.to_dict() for position in self.positions]
 
     def function_buy(self, position_number, opp_number):
+        self.trade_mutex.acquire()
         opp: fumble_opp = self.trade_opps.pop(opp_number)
         self.positions[position_number].buy(opp)
+        self.trade_mutex.release()
         print("Buy: " + str(opp.buy))
         print("Sell: " + str(opp.sell))
         print("Name: " + opp.name)
@@ -342,20 +357,18 @@ class Trader:
     def function_sell(self, number):
         number = int(number)
         print(f"Sell on slot {number + 1}")
+        self.trade_mutex.acquire()
         self.positions[number].sell()
+        self.trade_mutex.release()
 
     def function_collect(self, number):
         number = int(number)
         print(f"Collect on slot {number}")
+        self.trade_mutex.acquire()
         self.positions[number].collect()
+        self.trade_mutex.release()
 
-        # random sell or buy
-        # random click pos
-
-    def function_exit(self, number):
-        number = int(number)
-        # reinstatiate the position as a new position
-        print(f"Exit on slot {number}")
+    def instatiate_pos(self, number):
         self.positions[number] = Position(
             self.positions[number].buy_coord,
             self.positions[number].sell_coord,
@@ -366,6 +379,43 @@ class Trader:
             self.positions[number].collect_coord,
             parent_window=self.window,
         )
+
+    def function_exit(self, number):
+        number = int(number)
+        # reinstatiate the position as a new position
+        print(f"Exit on slot {number}")
+        self.instatiate_pos(number)
+
+    def auto_trade(self):
+        pos: Position
+        opp: fumble_opp
+        for slot, pos in enumerate(self.positions):
+            match pos.state:
+                case PositionStates.BUYING:
+                    # Need to see if our buy has finished (Requires CV)
+                    buy_finished = True
+                    if buy_finished:
+                        self.function_collect(slot)
+                        self.function_sell(slot)
+                case PositionStates.SELLING:
+                    # Need to use CV to see if its finished
+                    sell_finished = True
+                    if sell_finished:
+                        # Get that money money
+                        self.function_collect(slot)
+                        # Clear pos now:
+                        self.instatiate_pos(slot)
+                case PositionStates.PENDING:
+                    # Get the opp on the back of the queue
+                    number_of_opps = len(self.trade_opps)
+                    # TODO: We could make this smarter
+                    self.function_buy(slot, number_of_opps - 1)
+
+
+def run_autotrader(trader):
+    while True:
+        trader.auto_trade()
+        time.sleep(1)
 
 
 def run_uvicorn():
@@ -401,6 +451,11 @@ async def main_server(trader, host, port):
     # Start Uvicorn server in a thread
     uvicorn_thread = threading.Thread(target=run_uvicorn, daemon=True)
     uvicorn_thread.start()
+
+    # Start autotrade if set
+    if trader.auto:
+        trading_thread = threading.Thread(target=run_autotrader)
+        trading_thread.start()
     try:
         while True:
             try:
@@ -421,7 +476,7 @@ async def main_server(trader, host, port):
 
 def main():
     args = parse_args()
-    trader = Trader(username=args.username, slots=args.slots)
+    trader = Trader(username=args.username, slots=args.slots, auto=args.auto)
 
     def get_trader():
         return trader
@@ -505,28 +560,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-"""
-Mutex lock for whether or not we're currently executing an action
-UI:
-1. Store information on the positions of the RS screen
-2. "queue of active trade"
-3. Enter letter combo "1b" = enter position for queue place 1, lock to queue "1" for that inventory slot
-4. Execute in RS
-5. Return control immediately back to the terminal for the python interface
-6. Enter or exit trades "2b" is another enter, "1b" is exit and collect all regardless of fill
-7. Repeat and make tons of fake money
-
-
-Two queues, one for active trades, one for most recent potential trades from server. As soon as a slot is filled and exited
-we repopulate that position from the most active list. 
-"""
-
-"""
-Window Sizes:
-480 x 240 - main
-115 x 105 - slot
-115 x 105 - slot
-
-
-"""
